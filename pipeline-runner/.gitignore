@@ -1,0 +1,12 @@
+backend/.venv/
+backend/.env
+backend/pipeline.db
+backend/pipeline.db-wal
+backend/pipeline.db-shm
+backend/_reports/
+backend/__pycache__/
+backend/app/__pycache__/
+backend/fetchers/__pycache__/
+frontend/node_modules/
+frontend/dist/
+.DS_Store

@@ -1,0 +1,78 @@
+{
+  "meta": {
+    "company_name": "Esimerkki Oy",
+    "y_tunnus": "1234567-8",
+    "industry": "Teollisuuspalvelut",
+    "unit": "tEUR",
+    "level": "konserni"
+  },
+  "actuals": {
+    "years": [2022, 2023, 2024],
+    "income_statement": {
+      "revenue": [4200, 4650, 5100],
+      "ebitda": [630, 720, 815],
+      "ebit": [420, 495, 560],
+      "net_income": [310, 372, 430]
+    },
+    "balance_sheet": {
+      "total_assets": [3800, 4100, 4500],
+      "equity": [1700, 1950, 2240],
+      "net_debt": [1300, 1250, 1200],
+      "cash": [250, 280, 300]
+    }
+  },
+  "forecast": {
+    "years": [2025, 2026, 2027, 2028, 2029],
+    "terminal": { "growth_pct": 2.0 },
+    "revenue": [5500, 5950, 6400, 6850, 7300],
+    "ebit": [610, 700, 790, 880, 970],
+    "fcff": [500, 600, 700, 800, 900]
+  },
+  "valuation_engine": {
+    "wacc_parameters": {
+      "wacc": 10.0,
+      "cost_of_equity": 12.5,
+      "cost_of_debt": 4.0,
+      "tax_rate": 20.0,
+      "equity_weight": 65.0,
+      "debt_weight": 35.0
+    },
+    "dcf": {
+      "years": [2025, 2026, 2027, 2028, 2029],
+      "fcff": [500, 600, 700, 800, 900],
+      "discounted_fcff": [454.55, 495.87, 525.92, 546.41, 558.83],
+      "terminal_value": 7124.45,
+      "bridge": {
+        "net_debt": 1200,
+        "cash": 300
+      },
+      "equity_value_before_floor": 8806.0
+    },
+    "eva": {
+      "invested_capital": [3000, 3150, 3300],
+      "nopat": [336, 396, 448],
+      "wacc_charge": [300, 315, 330]
+    }
+  },
+  "key_ratios": {
+    "years": [2022, 2023, 2024],
+    "ebit_margin_pct": [10.0, 10.6, 11.0],
+    "revenue_growth_pct": [null, 10.7, 9.7],
+    "roe_pct": [18.2, 19.1, 19.2]
+  },
+  "credit_risk": {
+    "rating": "BB+",
+    "equity_ratio_pct": 49.8,
+    "interest_coverage": 6.2
+  },
+  "peers": [
+    { "name": "Verrokki A Oy", "ev_ebitda": 7.5, "ev_ebit": 10.2 },
+    { "name": "Verrokki B Oy", "ev_ebitda": 8.1, "ev_ebit": 11.0 }
+  ],
+  "client_reported_signals": [
+    { "signal": "Tilauskanta kasvanut 12 %", "source": "asiakas" }
+  ],
+  "flags": [
+    "Yksi suurasiakas vastaa 28 % liikevaihdosta"
+  ]
+}
