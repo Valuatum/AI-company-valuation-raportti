@@ -1,55 +1,81 @@
 import type { ModelInfo, Pipeline, Run, Stage, ValidatorReport } from "./types";
 
+// Empty in dev (Vite proxies /api → :8000). On Vercel set VITE_API_BASE to the
+// hosted backend origin, e.g. https://valu-pipeline.fly.dev
+export const API_BASE = import.meta.env.VITE_API_BASE ?? "";
+
+const TOKEN_KEY = "app_token";
+export const getToken = () => localStorage.getItem(TOKEN_KEY) || "";
+export const setToken = (t: string) => localStorage.setItem(TOKEN_KEY, t);
+
+export function authHeaders(): Record<string, string> {
+  const t = getToken();
+  return t ? { Authorization: `Bearer ${t}` } : {};
+}
+
+async function req(path: string, init: RequestInit = {}): Promise<Response> {
+  const r = await fetch(API_BASE + path, {
+    ...init,
+    headers: { ...authHeaders(), ...(init.headers || {}) },
+  });
+  return r;
+}
+
 async function j<T>(r: Response): Promise<T> {
   if (!r.ok) throw new Error((await r.text()) || r.statusText);
   return r.json();
 }
 
+const jsonHeaders = { "Content-Type": "application/json" };
+
 export const api = {
-  pipelines: () => fetch("/api/pipelines").then((r) => j<Pipeline[]>(r)),
-  pipeline: (id: string) => fetch(`/api/pipelines/${id}`).then((r) => j<Pipeline>(r)),
+  health: () =>
+    req("/api/health").then((r) => j<{ ok: boolean; auth: boolean }>(r)),
+
+  pipelines: () => req("/api/pipelines").then((r) => j<Pipeline[]>(r)),
+  pipeline: (id: string) => req(`/api/pipelines/${id}`).then((r) => j<Pipeline>(r)),
 
   updateStage: (sid: string, s: Stage) =>
-    fetch(`/api/stages/${sid}`, {
+    req(`/api/stages/${sid}`, {
       method: "PUT",
-      headers: { "Content-Type": "application/json" },
+      headers: jsonHeaders,
       body: JSON.stringify(s),
     }).then((r) => j<Stage>(r)),
 
   addStage: (pid: string, s: Partial<Stage>) =>
-    fetch(`/api/pipelines/${pid}/stages`, {
+    req(`/api/pipelines/${pid}/stages`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: jsonHeaders,
       body: JSON.stringify(s),
     }).then((r) => j<Stage>(r)),
 
   deleteStage: (sid: string) =>
-    fetch(`/api/stages/${sid}`, { method: "DELETE" }).then((r) => j(r)),
+    req(`/api/stages/${sid}`, { method: "DELETE" }).then((r) => j(r)),
 
   reorder: (pid: string, stage_ids: string[]) =>
-    fetch(`/api/pipelines/${pid}/reorder`, {
+    req(`/api/pipelines/${pid}/reorder`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: jsonHeaders,
       body: JSON.stringify({ stage_ids }),
     }).then((r) => j<Pipeline>(r)),
 
-  models: () => fetch("/api/models").then((r) => j<ModelInfo[]>(r)),
+  models: () => req("/api/models").then((r) => j<ModelInfo[]>(r)),
   refreshModels: () =>
-    fetch("/api/models/refresh", { method: "POST" }).then((r) => j<ModelInfo[]>(r)),
+    req("/api/models/refresh", { method: "POST" }).then((r) => j<ModelInfo[]>(r)),
 
-  sampleInputData: () => fetch("/api/sample-input-data").then((r) => j<any>(r)),
+  sampleInputData: () => req("/api/sample-input-data").then((r) => j<any>(r)),
 
   fetchCompany: (identifier: string, params: any = {}) =>
-    fetch("/api/fetch-company", {
+    req("/api/fetch-company", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: jsonHeaders,
       body: JSON.stringify({ identifier, params }),
     }).then((r) => j<any>(r)),
 
   validate: (validator_code: string, output: any, context: any) =>
-    fetch("/api/validate", {
+    req("/api/validate", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: jsonHeaders,
       body: JSON.stringify({ validator_code, output, context }),
     }).then((r) => j<ValidatorReport>(r)),
 
@@ -59,49 +85,57 @@ export const api = {
     identifier?: string;
     stop_on_failure: boolean;
   }) =>
-    fetch("/api/runs", {
+    req("/api/runs", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: jsonHeaders,
       body: JSON.stringify(body),
     }).then((r) => j<{ run_id: string }>(r)),
 
-  runs: () => fetch("/api/runs").then((r) => j<any[]>(r)),
-  run: (id: string) => fetch(`/api/runs/${id}`).then((r) => j<Run>(r)),
+  runs: () => req("/api/runs").then((r) => j<any[]>(r)),
+  run: (id: string) => req(`/api/runs/${id}`).then((r) => j<Run>(r)),
+
+  compare: (rid: string, order: number, models: string[]) =>
+    req(`/api/runs/${rid}/stages/${order}/compare`, {
+      method: "POST",
+      headers: jsonHeaders,
+      body: JSON.stringify({ models }),
+    }).then((r) => j<{ results: any[] }>(r)),
 
   costs: () =>
-    fetch("/api/costs").then((r) =>
+    req("/api/costs").then((r) =>
       j<{ grand_total_usd: number; by_model: any[]; runs: any[] }>(r)
     ),
   reportCapabilities: () =>
-    fetch("/api/report-capabilities").then((r) =>
+    req("/api/report-capabilities").then((r) =>
       j<{ generator: boolean; pdf: boolean }>(r)
     ),
 
   valuatumConfig: () =>
-    fetch("/api/valuatum/config").then((r) =>
+    req("/api/valuatum/config").then((r) =>
       j<{ token: boolean; profinder: boolean; kit: boolean }>(r)
     ),
 
-  compare: (rid: string, order: number, models: string[]) =>
-    fetch(`/api/runs/${rid}/stages/${order}/compare`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ models }),
-    }).then((r) => j<{ results: any[] }>(r)),
+  // report files need auth header too → fetch as blob, return object URL
+  reportUrl: async (rid: string, format: "html" | "pdf") => {
+    const r = await req(`/api/runs/${rid}/report.${format}`);
+    if (!r.ok) throw new Error(await r.text());
+    return URL.createObjectURL(await r.blob());
+  },
 };
 
-// SSE helpers — POST endpoints stream too, so we use fetch + ReadableStream.
+// SSE over fetch streaming (so we can send the auth header; EventSource can't).
 export async function streamRun(
-  url: string,
+  path: string,
   method: "GET" | "POST",
   onEvent: (e: any) => void,
   body?: any
 ): Promise<void> {
-  const resp = await fetch(url, {
+  const resp = await req(path, {
     method,
-    headers: body ? { "Content-Type": "application/json" } : undefined,
+    headers: body ? jsonHeaders : undefined,
     body: body ? JSON.stringify(body) : undefined,
   });
+  if (!resp.ok) throw new Error((await resp.text()) || resp.statusText);
   if (!resp.body) throw new Error("no stream body");
   const reader = resp.body.getReader();
   const dec = new TextDecoder();

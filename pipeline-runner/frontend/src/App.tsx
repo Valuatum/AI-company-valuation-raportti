@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { api, streamRun } from "./api";
+import { api, streamRun, getToken, setToken } from "./api";
 import type { ModelInfo, Pipeline, Run, Stage, StageResult } from "./types";
 import { StageList } from "./components/StageList";
 import { StageEditor } from "./components/StageEditor";
@@ -34,30 +34,43 @@ export default function App() {
   const [showValuatum, setShowValuatum] = useState(false);
   const [reportCaps, setReportCaps] = useState({ generator: false, pdf: false });
   const [reportBusy, setReportBusy] = useState(false);
+  const [needToken, setNeedToken] = useState(false);
+  const [tokenDraft, setTokenDraft] = useState("");
+
+  function init() {
+    api
+      .pipelines()
+      .then((ps) => {
+        setPipeline(ps[0]);
+        setSelectedId(ps[0]?.stages[0]?.id ?? null);
+      })
+      .catch((e) => {
+        if (String(e).includes("401") || String(e).includes("unauthorized"))
+          setNeedToken(true);
+      });
+    api.models().then(setModels).catch(() => {});
+    api.runs().then(setRuns).catch(() => {});
+    api.reportCapabilities().then(setReportCaps).catch(() => {});
+  }
 
   useEffect(() => {
-    api.pipelines().then((ps) => {
-      setPipeline(ps[0]);
-      setSelectedId(ps[0]?.stages[0]?.id ?? null);
-    });
-    api.models().then(setModels);
-    api.runs().then(setRuns);
-    api.reportCapabilities().then(setReportCaps).catch(() => {});
+    api
+      .health()
+      .then((h) => {
+        if (h.auth && !getToken()) setNeedToken(true);
+        else init();
+      })
+      .catch(() => init());
   }, []);
 
   async function openReport(format: "html" | "pdf") {
     if (!runId) return;
     setReportBusy(true);
     try {
-      const resp = await fetch(`/api/runs/${runId}/report.${format}`);
-      if (!resp.ok) {
-        const t = await resp.text();
-        alert("Raportin generointi epäonnistui:\n" + t);
-        return;
-      }
-      const blob = await resp.blob();
-      const url = URL.createObjectURL(blob);
+      const url = await api.reportUrl(runId, format);
       window.open(url, "_blank");
+    } catch (e: any) {
+      alert("Raportin generointi epäonnistui:\n" + (e?.message || e));
     } finally {
       setReportBusy(false);
     }
@@ -218,6 +231,39 @@ export default function App() {
     await refreshRun(rid);
   }
 
+  function saveToken() {
+    setToken(tokenDraft.trim());
+    setNeedToken(false);
+    init();
+  }
+
+  if (needToken)
+    return (
+      <div className="h-full flex items-center justify-center">
+        <div className="bg-neutral-900 border border-neutral-700 rounded-lg p-6 w-96">
+          <div className="font-semibold mb-2">Pääsytunnus vaaditaan</div>
+          <div className="text-xs text-neutral-400 mb-3">
+            Backend on suojattu jaetulla tunnuksella (APP_TOKEN).
+          </div>
+          <input
+            type="password"
+            value={tokenDraft}
+            onChange={(e) => setTokenDraft(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && saveToken()}
+            placeholder="liitä token"
+            className="w-full bg-neutral-800 border border-neutral-700 rounded px-3 py-2 text-sm mb-3"
+            autoFocus
+          />
+          <button
+            onClick={saveToken}
+            className="w-full px-3 py-2 rounded bg-emerald-700 hover:bg-emerald-600 text-sm"
+          >
+            Tallenna ja jatka
+          </button>
+        </div>
+      </div>
+    );
+
   if (!pipeline || !selected)
     return <div className="p-8 text-neutral-400">Ladataan…</div>;
 
@@ -297,6 +343,16 @@ export default function App() {
           title="päivitä mallilista"
         >
           ⟳ mallit ({models.length})
+        </button>
+        <button
+          onClick={() => {
+            setTokenDraft(getToken());
+            setNeedToken(true);
+          }}
+          className="text-xs px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700"
+          title="vaihda pääsytunnus"
+        >
+          🔒
         </button>
       </div>
 

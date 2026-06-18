@@ -18,12 +18,37 @@ from .models import (  # noqa: E402
 from fetchers.company_data import fetch_company_data  # noqa: E402
 
 app = FastAPI(title="Valuation Pipeline Runner")
+
+_origins = os.getenv("ALLOWED_ORIGINS", "*")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"] if _origins == "*" else [o.strip() for o in _origins.split(",")],
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Shared-token gate. If APP_TOKEN is unset (local dev) auth is disabled.
+# When set, every /api/* call (except /api/health) needs:
+#   Authorization: Bearer <APP_TOKEN>
+_APP_TOKEN = os.getenv("APP_TOKEN", "")
+
+
+@app.middleware("http")
+async def auth_gate(request, call_next):
+    if _APP_TOKEN and request.method != "OPTIONS":
+        path = request.url.path
+        if path.startswith("/api/") and path != "/api/health":
+            sent = request.headers.get("authorization", "")
+            if sent != f"Bearer {_APP_TOKEN}":
+                from fastapi.responses import JSONResponse
+
+                return JSONResponse({"detail": "unauthorized"}, status_code=401)
+    return await call_next(request)
+
+
+@app.get("/api/health")
+def health():
+    return {"ok": True, "auth": bool(_APP_TOKEN)}
 
 
 @app.on_event("startup")

@@ -1,0 +1,26 @@
+# Backend deploy (Fly.io). Build context is the repo root.
+# Rename `app` to your own unique name before first deploy.
+app = "valu-pipeline"
+primary_region = "arn"  # Stockholm; pick the region closest to you
+
+[build]
+  dockerfile = "pipeline-runner/Dockerfile"
+
+[env]
+  PIPELINE_DB = "/data/pipeline.db"
+
+# Persistent disk for SQLite (without this, all data is lost on restart).
+[mounts]
+  source = "valu_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "1gb"
