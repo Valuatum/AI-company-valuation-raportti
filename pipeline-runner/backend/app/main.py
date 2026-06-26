@@ -23,6 +23,7 @@ _origins = os.getenv("ALLOWED_ORIGINS", "*")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"] if _origins == "*" else [o.strip() for o in _origins.split(",")],
+    allow_origin_regex=None if _origins == "*" else r"https://.*\.vercel\.app",
     allow_methods=["*"],
     allow_headers=["*"],
 )
