@@ -1,44 +1,24 @@
 import { useState } from "react";
 import { DATA_FETCHER_MODEL } from "../types";
-
-const PRESETS = [
-  {
-    group: "Fast / Cheap",
-    items: [
-      { id: "google/gemini-2.5-flash", label: "Gemini 2.5 Flash" },
-      { id: "deepseek/deepseek-v4-flash", label: "DeepSeek V4 Flash" },
-      { id: "openai/gpt-4o-mini", label: "GPT-4o Mini" },
-      { id: "x-ai/grok-3-mini", label: "Grok 3 Mini" },
-    ],
-  },
-  {
-    group: "Balanced",
-    items: [
-      { id: "google/gemini-2.5-pro", label: "Gemini 2.5 Pro" },
-      { id: "deepseek/deepseek-v4-pro", label: "DeepSeek V4 Pro" },
-      { id: "openai/gpt-4o", label: "GPT-4o" },
-      { id: "anthropic/claude-sonnet-4-6", label: "Claude Sonnet 4.6" },
-    ],
-  },
-  {
-    group: "Powerful / Reasoning",
-    items: [
-      { id: "openai/o4-mini", label: "o4-mini (reasoning)" },
-      { id: "anthropic/claude-opus-4-8", label: "Claude Opus 4.8" },
-    ],
-  },
-];
-
-const ALL_IDS = PRESETS.flatMap((g) => g.items.map((m) => m.id));
+import type { ModelInfo } from "../types";
+import {
+  MODEL_GROUPS,
+  PRESET_IDS,
+  modelPrice,
+  fmtUsd,
+  priceText,
+} from "../modelPresets";
 
 export function ModelSelect({
   value,
+  models,
   onChange,
 }: {
   value: string;
+  models?: ModelInfo[];
   onChange: (v: string) => void;
 }) {
-  const [custom, setCustom] = useState(!ALL_IDS.includes(value));
+  const [custom, setCustom] = useState(!PRESET_IDS.includes(value));
 
   if (value === DATA_FETCHER_MODEL) {
     return (
@@ -48,7 +28,8 @@ export function ModelSelect({
     );
   }
 
-  const isPreset = ALL_IDS.includes(value);
+  const isPreset = PRESET_IDS.includes(value);
+  const sel = modelPrice(models, value);
 
   function handleSelect(e: React.ChangeEvent<HTMLSelectElement>) {
     const v = e.target.value;
@@ -67,13 +48,17 @@ export function ModelSelect({
         onChange={handleSelect}
         className="bg-neutral-800 border border-neutral-700 rounded px-2 py-1 text-xs"
       >
-        {PRESETS.map((g) => (
+        {MODEL_GROUPS.map((g) => (
           <optgroup key={g.group} label={g.group}>
-            {g.items.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.label}
-              </option>
-            ))}
+            {g.items.map((m) => {
+              const pt = priceText(models, m.id);
+              return (
+                <option key={m.id} value={m.id}>
+                  {m.label}
+                  {pt ? `  —  ${pt}` : ""}
+                </option>
+              );
+            })}
           </optgroup>
         ))}
         <optgroup label="──────────">
@@ -88,6 +73,17 @@ export function ModelSelect({
           spellCheck={false}
           className="bg-neutral-800 border border-neutral-700 rounded px-2 py-1 text-xs font-mono w-64"
         />
+      )}
+      {sel ? (
+        <div className="text-[10px] text-emerald-400/90">
+          in {fmtUsd(sel.inM)} · out {fmtUsd(sel.outM)} per 1M tokens
+        </div>
+      ) : (
+        !isPreset && (
+          <div className="text-[10px] text-neutral-500">
+            price unknown (refresh models)
+          </div>
+        )
       )}
     </div>
   );

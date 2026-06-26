@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import Editor from "@monaco-editor/react";
-import type { Stage } from "../types";
+import type { ModelInfo, Stage } from "../types";
 import { DATA_FETCHER_MODEL } from "../types";
 import { ModelSelect } from "./ModelSelect";
 import { api, streamRun } from "../api";
@@ -17,12 +17,14 @@ function substitute(template: string, ctx: Record<string, any>) {
 
 export function StageEditor({
   stage,
+  models,
   context,
   inputData,
   onSave,
   onSetInputData,
 }: {
   stage: Stage;
+  models?: ModelInfo[];
   context: Record<string, any>;
   inputData: any;
   onSave: (s: Stage) => void | Promise<void>;
@@ -82,7 +84,7 @@ export function StageEditor({
         {!isFetcher && (
           <div className="space-y-2">
             <div className="text-xs text-neutral-500 uppercase tracking-wide">Model</div>
-            <ModelSelect value={draft.model} onChange={(v) => patch({ model: v })} />
+            <ModelSelect value={draft.model} models={models} onChange={(v) => patch({ model: v })} />
             <div className="flex flex-wrap gap-4 text-xs mt-2">
               <label className="flex items-center gap-1.5 text-neutral-400">
                 max_tokens
@@ -257,6 +259,7 @@ function Stage0Fetcher({
   const [showPaste, setShowPaste] = useState(false);
   const [pasteText, setPasteText] = useState(inputData ? JSON.stringify(inputData, null, 2) : "");
   const [pasteErr, setPasteErr] = useState<string | null>(null);
+  const [pasteOk, setPasteOk] = useState(false);
 
   useEffect(() => {
     setPasteText(inputData ? JSON.stringify(inputData, null, 2) : "");
@@ -301,8 +304,12 @@ function Stage0Fetcher({
 
   function applyPaste() {
     try {
-      onSetInputData(JSON.parse(pasteText));
+      const parsed = JSON.parse(pasteText);
+      onSetInputData(parsed);
       setPasteErr(null);
+      setShowPaste(false);
+      setPasteOk(true);
+      window.setTimeout(() => setPasteOk(false), 3000);
     } catch (e: any) {
       setPasteErr("JSON parse error: " + e.message);
     }
@@ -407,7 +414,12 @@ function Stage0Fetcher({
       {/* data preview */}
       {hasData && (
         <div className="space-y-1">
-          <div className="text-xs text-neutral-500 uppercase tracking-wide">Input data loaded</div>
+          <div className="flex items-center gap-2">
+            <div className="text-xs text-neutral-500 uppercase tracking-wide">Input data loaded</div>
+            {pasteOk && (
+              <span className="text-xs text-emerald-400">✓ set as input_data</span>
+            )}
+          </div>
           <pre className="text-[11px] bg-neutral-950 border border-neutral-800 rounded p-2 max-h-36 overflow-auto">
             {JSON.stringify(inputData?.meta ?? inputData, null, 2)}
           </pre>

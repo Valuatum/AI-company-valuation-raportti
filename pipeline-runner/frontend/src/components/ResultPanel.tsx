@@ -1,25 +1,16 @@
 import { useState } from "react";
 import Editor from "@monaco-editor/react";
-import type { Stage, StageResult } from "../types";
+import type { ModelInfo, Stage, StageResult } from "../types";
 import { STATUS_COLOR, STATUS_LABEL } from "../status";
 import { ValidatorChecklist } from "./ValidatorChecklist";
+import { PRESET_IDS, priceText } from "../modelPresets";
 
-const COMPARE_MODELS = [
-  "google/gemini-2.5-flash",
-  "google/gemini-2.5-pro",
-  "deepseek/deepseek-v4-flash",
-  "deepseek/deepseek-v4-pro",
-  "openai/gpt-4o",
-  "openai/gpt-4o-mini",
-  "openai/o4-mini",
-  "anthropic/claude-sonnet-4-6",
-  "anthropic/claude-opus-4-8",
-  "x-ai/grok-3-mini",
-];
+const COMPARE_MODELS = PRESET_IDS;
 
 export function ResultPanel({
   result,
   stage,
+  models,
   busy,
   onRerun,
   onRerunFrom,
@@ -27,7 +18,7 @@ export function ResultPanel({
 }: {
   result: StageResult | undefined;
   stage: Stage;
-  models: any[];
+  models: ModelInfo[];
   busy: boolean;
   onRerun: (order: number) => void;
   onRerunFrom: (order: number) => void;
@@ -91,19 +82,24 @@ export function ResultPanel({
         <div className="px-3 py-2 border-b border-neutral-800 bg-neutral-950 shrink-0">
           <div className="text-xs text-neutral-400 mb-2">Select models to compare:</div>
           <div className="flex flex-wrap gap-1.5 mb-2">
-            {COMPARE_MODELS.map((id) => (
-              <button
-                key={id}
-                onClick={() => toggleCmpModel(id)}
-                className={`text-xs px-2 py-1 rounded font-mono ${
-                  cmpSelected.includes(id)
-                    ? "bg-sky-700 text-white"
-                    : "bg-neutral-800 text-neutral-400 hover:bg-neutral-700"
-                }`}
-              >
-                {id.split("/")[1]}
-              </button>
-            ))}
+            {COMPARE_MODELS.map((id) => {
+              const pt = priceText(models, id);
+              return (
+                <button
+                  key={id}
+                  onClick={() => toggleCmpModel(id)}
+                  title={pt ? `${id} — ${pt} per 1M tokens` : id}
+                  className={`text-xs px-2 py-1 rounded font-mono ${
+                    cmpSelected.includes(id)
+                      ? "bg-sky-700 text-white"
+                      : "bg-neutral-800 text-neutral-400 hover:bg-neutral-700"
+                  }`}
+                >
+                  {id.split("/")[1]}
+                  {pt && <span className="ml-1 opacity-60">{pt}</span>}
+                </button>
+              );
+            })}
           </div>
           <button
             disabled={busy || cmpSelected.length === 0}

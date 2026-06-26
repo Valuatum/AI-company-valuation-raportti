@@ -425,6 +425,7 @@ export default function App() {
           <StageEditor
             key={selected.id}
             stage={selected}
+            models={models}
             context={context}
             inputData={inputData}
             onSave={saveStage}
