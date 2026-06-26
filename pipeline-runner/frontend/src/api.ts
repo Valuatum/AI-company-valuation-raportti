@@ -95,6 +95,17 @@ export const api = {
       body: JSON.stringify(body),
     }).then((r) => j<{ run_id: string }>(r)),
 
+  // Kick off the run server-side (background task, decoupled from the client).
+  startRunBg: (rid: string, opts: { from_order?: number; only?: number } = {}) => {
+    const q = new URLSearchParams();
+    if (opts.from_order != null) q.set("from_order", String(opts.from_order));
+    if (opts.only != null) q.set("only", String(opts.only));
+    const qs = q.toString();
+    return req(`/api/runs/${rid}/start${qs ? "?" + qs : ""}`, {
+      method: "POST",
+    }).then((r) => j<{ ok: boolean; started: boolean }>(r));
+  },
+
   runs: () => req("/api/runs").then((r) => j<any[]>(r)),
   run: (id: string) => req(`/api/runs/${id}`).then((r) => j<Run>(r)),
 

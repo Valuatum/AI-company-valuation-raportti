@@ -1,4 +1,5 @@
 """FastAPI app. The OpenRouter key lives here, never in the browser."""
+import asyncio
 import json
 import os
 from contextlib import asynccontextmanager
@@ -230,6 +231,51 @@ async def _stream(rid, only=None, from_order=None):
 @app.get("/api/runs/{rid}/stream")
 async def stream_run(rid: str):
     return EventSourceResponse(_stream(rid))
+
+
+# ---- background runner ------------------------------------------------------
+# Drive a run to completion server-side, decoupled from any client connection.
+# run_stages persists each stage result as it finishes, so the client just polls
+# GET /api/runs/{rid}. This means a run survives the tab closing / backgrounding
+# (e.g. iOS Safari) and the progress UI never depends on fetch-stream buffering.
+_RUN_TASKS: dict[str, asyncio.Task] = {}
+
+
+async def _drive_run(rid: str, only=None, from_order=None):
+    try:
+        run = _run_with_params(rid)
+        if not run:
+            return
+        p = store.get_pipeline(run["pipeline_id"])
+        store.set_run_status(rid, "running")
+        async for _ in runner.run_stages(
+            run, p["stages"], only=only, from_order=from_order
+        ):
+            pass
+    except Exception:
+        try:
+            store.set_run_status(rid, "error")
+        except Exception:
+            pass
+    finally:
+        _RUN_TASKS.pop(rid, None)
+
+
+def _start_bg(rid: str, only=None, from_order=None) -> bool:
+    task = _RUN_TASKS.get(rid)
+    if task and not task.done():
+        return False
+    _RUN_TASKS[rid] = asyncio.create_task(
+        _drive_run(rid, only=only, from_order=from_order)
+    )
+    return True
+
+
+@app.post("/api/runs/{rid}/start")
+async def start_run(rid: str, from_order: int | None = None, only: int | None = None):
+    if not store.get_run(rid):
+        raise HTTPException(404, "run not found")
+    return {"ok": True, "started": _start_bg(rid, only=only, from_order=from_order)}
 
 
 @app.post("/api/runs/{rid}/stages/{order}/rerun")

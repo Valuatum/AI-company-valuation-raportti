@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { api, streamRun, getToken, setToken } from "./api";
+import { api, getToken, setToken } from "./api";
 import type { ModelInfo, Pipeline, Run, Stage, StageResult } from "./types";
 import { StageList } from "./components/StageList";
 import { StageEditor } from "./components/StageEditor";
@@ -83,6 +83,35 @@ export default function App() {
     return () => clearInterval(t);
   }, [busy]);
 
+  // Reliability poll: the SSE stream drives the run, but some browsers (notably
+  // iOS Safari) buffer fetch-streamed responses, so live stage events never
+  // reach the UI. Poll the run from the server every few seconds while a run is
+  // in flight so progress always updates regardless of stream buffering.
+  useEffect(() => {
+    if (!busy || !runId) return;
+    let stop = false;
+    const t = setInterval(async () => {
+      try {
+        const run: Run = await api.run(runId);
+        if (stop) return;
+        const map: Record<number, StageResult> = {};
+        for (const r of run.results) map[r.order] = r;
+        setResults(map);
+        setTotalCost(run.total_cost_usd);
+        if (run.status !== "running") {
+          setBusy(false);
+          api.runs().then(setRuns).catch(() => {});
+        }
+      } catch {
+        /* transient — keep polling */
+      }
+    }, 3000);
+    return () => {
+      stop = true;
+      clearInterval(t);
+    };
+  }, [busy, runId]);
+
   function newRun() {
     setRunId(null);
     setResults({});
@@ -153,46 +182,25 @@ export default function App() {
     if (run.input_data != null) setInputData(run.input_data);
   }
 
-  function applyEvent(rid: string, e: any) {
-    if (e.event === "stage") {
-      setResults((prev) => ({
-        ...prev,
-        [e.order]: {
-          ...(prev[e.order] as any),
-          order: e.order,
-          name: e.name,
-          status: e.status,
-          finish_reason: e.finish_reason ?? prev[e.order]?.finish_reason ?? null,
-          validator_passed: e.validator_passed ?? prev[e.order]?.validator_passed ?? null,
-          error_message: e.error_message ?? null,
-        } as StageResult,
-      }));
-      if (["ok", "validation_failed", "error", "skipped"].includes(e.status)) {
-        refreshRun(rid);
-      }
-    } else if (e.event === "done") {
-      setTotalCost(e.total_cost_usd);
-      refreshRun(rid);
-      setBusy(false);
-      api.runs().then(setRuns);
-    }
-  }
-
   async function runAll() {
     if (!pipeline) return;
     setBusy(true);
     setRunStartAt(Date.now());
     setNowTick(Date.now());
     setResults({});
-    const { run_id } = await api.startRun({
-      pipeline_id: pipeline.id,
-      input_data: inputData ?? undefined,
-      stop_on_failure: stopOnFailure,
-    });
-    setRunId(run_id);
-    await streamRun(`/api/runs/${run_id}/stream`, "GET", (e) =>
-      applyEvent(run_id, e)
-    ).finally(() => setBusy(false));
+    try {
+      const { run_id } = await api.startRun({
+        pipeline_id: pipeline.id,
+        input_data: inputData ?? undefined,
+        stop_on_failure: stopOnFailure,
+      });
+      setRunId(run_id);
+      await api.startRunBg(run_id); // runs server-side; the poll drives the UI
+      refreshRun(run_id); // immediate first paint
+    } catch (e: any) {
+      setBusy(false);
+      alert("Run failed to start:\n" + (e?.message || e));
+    }
   }
 
   async function rerun(order: number, from = false) {
@@ -200,12 +208,13 @@ export default function App() {
     setBusy(true);
     setRunStartAt(Date.now());
     setNowTick(Date.now());
-    const url = from
-      ? `/api/runs/${runId}/stages/${order}/rerun-from`
-      : `/api/runs/${runId}/stages/${order}/rerun`;
-    await streamRun(url, "POST", (e) => applyEvent(runId, e)).finally(() =>
-      setBusy(false)
-    );
+    try {
+      await api.startRunBg(runId, from ? { from_order: order } : { only: order });
+      refreshRun(runId);
+    } catch (e: any) {
+      setBusy(false);
+      alert("Rerun failed:\n" + (e?.message || e));
+    }
   }
 
   async function compare(order: number, ms: string[]) {
