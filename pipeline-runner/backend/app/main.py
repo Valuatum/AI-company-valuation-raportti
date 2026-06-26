@@ -48,7 +48,13 @@ async def auth_gate(request, call_next):
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "auth": bool(_APP_TOKEN)}
+    from . import db
+
+    return {
+        "ok": True,
+        "auth": bool(_APP_TOKEN),
+        "db": "postgres" if db.IS_PG else "sqlite",
+    }
 
 
 @app.on_event("startup")
