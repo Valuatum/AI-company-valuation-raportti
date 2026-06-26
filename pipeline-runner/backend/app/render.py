@@ -151,8 +151,17 @@ def _fmt_teur(n):
     return f"{_fmt(n)} tEUR"
 
 
+_URL_CELL_RE = re.compile(r"^\s*https?://(?:www\.)?([^/\s]+)(?:/\S*)?\s*$", re.I)
+
+
 def _num_cell(v):
     """Render a table value, colouring positive growth green / negative red."""
+    # A bare URL in a source column reads as scraped data in a client PDF; show
+    # just the domain (e.g. ytj.fi) instead of the full link.
+    if isinstance(v, str):
+        m = _URL_CELL_RE.match(v)
+        if m:
+            return f'<span class="muted">{_esc(m.group(1))}</span>'
     n = _to_num(v)
     txt = _esc(v)
     if n is not None and isinstance(v, str) and ("%" in v or v.strip().startswith(("+", "-", "−"))):
@@ -814,8 +823,10 @@ def _method_visuals(derived):
 
 def _section(report, sec, derived=None):
     blocks = "".join(x for x in (_render_block(b) for b in (sec.get("blocks") or [])) if x)
-    if str(sec.get("id")) == "8" and derived:
-        blocks += _method_visuals(derived)
+    # Section 8 (arvonmääritys) already carries the model's own method table +
+    # method-value chart, so we do NOT inject derived visuals here — on distressed
+    # companies the derived donut/bars duplicated and contradicted them (scenario
+    # weights mislabelled as method weights; negative method values shown "hylätty").
     if not blocks.strip():
         blocks = ('<p class="muted" style="font-style:italic">'
                   'Tietoa ei ollut saatavilla tähän osioon.</p>')
@@ -1045,7 +1056,8 @@ h4.blk{ font-size:8pt; font-weight:700; color:var(--gray); text-transform:upperc
 .callout.neutral .co-badge{ background:var(--gray); }
 table.tbl{ width:100%; border-collapse:collapse; font-size:8.4pt; margin:6px 0 10px; }
 table.tbl th, table.tbl td{ padding:4.5px 7px; text-align:right; border-bottom:1px solid var(--line);
-  font-variant-numeric:tabular-nums lining-nums; }
+  font-variant-numeric:tabular-nums lining-nums; overflow-wrap:anywhere; word-break:break-word; }
+table.tbl td:first-child{ max-width:80mm; }
 table.tbl thead th{ color:var(--green); font-weight:700; border-bottom:1.5px solid var(--green);
   font-family:var(--head); font-size:7.8pt; text-align:right; }
 table.tbl thead th:first-child{ text-align:left; }

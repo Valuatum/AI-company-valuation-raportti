@@ -216,8 +216,7 @@ def test_golden_renders_signature_visuals_and_markdown():
     assert "<strong>oman pääoman arvo</strong>" in lo
     assert "<em>kannattava kasvu</em>" in lo
     assert "**" not in render._strip_tags(h)
-    # signature derived visuals now live in section 8 (Snapshot page removed)
-    assert "Menetelmäpainot" in h and "Menetelmien arvot" in h
+    # standalone Snapshot page is not generated (design contract)
     assert "Snapshot" not in h
     # legal disclaimer always present
     assert "sijoitusneuvo" in lo
