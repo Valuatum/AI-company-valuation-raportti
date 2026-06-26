@@ -10,6 +10,7 @@ to catch infinite loops and mistakes, not to sandbox hostile code. Network is
 discouraged by convention; we don't hard-block it.
 """
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -77,6 +78,11 @@ def run_validator(code: str, output, context) -> dict:
                 }
             ],
         }
+    finally:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
     out = proc.stdout
     marker = "___VRESULT___"
     if marker in out:

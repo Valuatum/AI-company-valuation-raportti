@@ -66,7 +66,8 @@ CREATE TABLE IF NOT EXISTS stage_results (
     finish_reason TEXT,
     error_message TEXT,
     started_at TEXT,
-    finished_at TEXT
+    finished_at TEXT,
+    model TEXT
 );
 """
 
@@ -101,6 +102,12 @@ if IS_PG:
         with _pool.connection() as conn:
             for stmt in _STATEMENTS:
                 conn.execute(stmt)
+            try:
+                conn.execute(
+                    "ALTER TABLE stage_results ADD COLUMN IF NOT EXISTS model TEXT"
+                )
+            except Exception:
+                pass
 
     def query(sql, params=()):
         with _pool.connection() as conn:
@@ -132,6 +139,11 @@ else:
         c = _conn()
         c.executescript(SCHEMA)
         c.commit()
+        try:
+            c.execute("ALTER TABLE stage_results ADD COLUMN model TEXT")
+            c.commit()
+        except Exception:
+            pass  # column already exists
 
     def query(sql, params=()):
         cur = _conn().execute(sql, params)

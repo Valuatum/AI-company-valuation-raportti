@@ -22,8 +22,16 @@ from .runner import SECTION_ORDER
 REPORTS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "_reports"))
 
 _CHROME_CANDIDATES = [
+    # macOS
     "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
     "/Applications/Chromium.app/Contents/MacOS/Chromium",
+    # Windows — system-wide
+    r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+    r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+    # Windows — per-user install
+    os.path.join(os.path.expanduser("~"), "AppData", "Local", "Google", "Chrome", "Application", "chrome.exe"),
+    os.path.join(os.path.expanduser("~"), "AppData", "Local", "Chromium", "Application", "chrome.exe"),
+    # Linux
     "google-chrome", "chromium", "chromium-browser",
 ]
 

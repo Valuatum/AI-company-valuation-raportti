@@ -157,6 +157,7 @@ def upsert_result(rid, res: dict):
         stage_id=res.get("stage_id", ""),
         order=res["order"],
         name=res.get("name", ""),
+        model=res.get("model"),
         status=res.get("status", "pending"),
         request_payload=db.jdump(res.get("request_payload")),
         raw_response=res.get("raw_response"),
@@ -198,6 +199,7 @@ def _result_row(r):
         "run_id": r["run_id"],
         "order": r["order"],
         "name": r["name"],
+        "model": r["model"],
         "status": r["status"],
         "request_payload": db.jload(r["request_payload"]),
         "raw_response": r["raw_response"],
@@ -271,11 +273,11 @@ def costs_summary(limit=200):
             "total_cost_usd": rtotal,
             "stage_count": len(sr),
         })
-    # per-model needs the model id, which lives on stages — join through runs.
+    # model stored on result since v2; fall back to live stage if missing.
     rows = db.query(
-        "SELECT st.model AS model, sr.cost_usd AS cost, "
+        "SELECT COALESCE(sr.model, st.model, '?') AS model, sr.cost_usd AS cost, "
         "sr.tokens_prompt AS tp, sr.tokens_completion AS tc "
-        "FROM stage_results sr JOIN stages st ON st.id = sr.stage_id"
+        "FROM stage_results sr LEFT JOIN stages st ON st.id = sr.stage_id"
     )
     for row in rows:
         m = row["model"] or "?"

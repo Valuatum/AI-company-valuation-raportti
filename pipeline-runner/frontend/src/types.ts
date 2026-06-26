@@ -47,6 +47,7 @@ export interface StageResult {
   run_id: string;
   order: number;
   name: string;
+  model: string | null;
   status: StageStatus;
   request_payload: any;
   raw_response: string | null;

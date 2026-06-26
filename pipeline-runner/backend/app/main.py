@@ -1,6 +1,7 @@
 """FastAPI app. The OpenRouter key lives here, never in the browser."""
 import json
 import os
+from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
@@ -17,7 +18,15 @@ from .models import (  # noqa: E402
 )
 from fetchers.company_data import fetch_company_data  # noqa: E402
 
-app = FastAPI(title="Valuation Pipeline Runner")
+
+@asynccontextmanager
+async def _lifespan(app):
+    seed.ensure_seeded()
+    await openrouter.refresh_models()
+    yield
+
+
+app = FastAPI(title="Valuation Pipeline Runner", lifespan=_lifespan)
 
 _origins = os.getenv("ALLOWED_ORIGINS", "*")
 app.add_middleware(
@@ -56,12 +65,6 @@ def health():
         "auth": bool(_APP_TOKEN),
         "db": "postgres" if db.IS_PG else "sqlite",
     }
-
-
-@app.on_event("startup")
-async def _startup():
-    seed.ensure_seeded()
-    await openrouter.refresh_models()
 
 
 # ---- pipelines / stages -----------------------------------------------------
@@ -163,7 +166,8 @@ async def valuatum_company_json(body: ValuatumExportIn):
         ):
             yield {"data": json.dumps(ev, ensure_ascii=False)}
 
-    return EventSourceResponse(gen())
+    # ping=20 keeps the SSE connection alive while the subprocess runs (up to 180 s)
+    return EventSourceResponse(gen(), ping=20)
 
 
 @app.get("/api/sample-input-data")

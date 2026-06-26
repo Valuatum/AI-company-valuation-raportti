@@ -5,7 +5,6 @@ import { StageList } from "./components/StageList";
 import { StageEditor } from "./components/StageEditor";
 import { ResultPanel } from "./components/ResultPanel";
 import { CostOverlay } from "./components/CostOverlay";
-import { ValuatumExport } from "./components/ValuatumExport";
 
 const WELL_KNOWN: Record<number, string> = {
   0: "input_data",
@@ -32,15 +31,13 @@ export default function App() {
   const [runs, setRuns] = useState<any[]>([]);
   const [cmp, setCmp] = useState<{ order: number; results: any[] } | null>(null);
   const [showCosts, setShowCosts] = useState(false);
-  const [showValuatum, setShowValuatum] = useState(false);
   const [reportCaps, setReportCaps] = useState({ generator: false, pdf: false });
   const [reportBusy, setReportBusy] = useState(false);
   const [needToken, setNeedToken] = useState(false);
   const [tokenDraft, setTokenDraft] = useState("");
 
   function init() {
-    api
-      .pipelines()
+    api.pipelines()
       .then((ps) => {
         setPipeline(ps[0]);
         setSelectedId(ps[0]?.stages[0]?.id ?? null);
@@ -55,14 +52,22 @@ export default function App() {
   }
 
   useEffect(() => {
-    api
-      .health()
+    api.health()
       .then((h) => {
         if (h.auth && !getToken()) setNeedToken(true);
         else init();
       })
       .catch(() => init());
   }, []);
+
+  function newRun() {
+    setRunId(null);
+    setResults({});
+    setTotalCost(0);
+    setInputData(null);
+    // jump to stage 0
+    setSelectedId(pipeline?.stages.find((s) => s.order === 0)?.id ?? null);
+  }
 
   async function openReport(format: "html" | "pdf") {
     if (!runId) return;
@@ -71,7 +76,7 @@ export default function App() {
       const url = await api.reportUrl(runId, format);
       window.open(url, "_blank");
     } catch (e: any) {
-      alert("Raportin generointi epäonnistui:\n" + (e?.message || e));
+      alert("Report generation failed:\n" + (e?.message || e));
     } finally {
       setReportBusy(false);
     }
@@ -82,7 +87,6 @@ export default function App() {
     [pipeline, selectedId]
   );
 
-  // context available to the selected stage, derived from completed results
   const context = useMemo(() => {
     const ctx: Record<string, any> = {};
     if (inputData != null) ctx["input_data"] = inputData;
@@ -135,8 +139,7 @@ export default function App() {
           name: e.name,
           status: e.status,
           finish_reason: e.finish_reason ?? prev[e.order]?.finish_reason ?? null,
-          validator_passed:
-            e.validator_passed ?? prev[e.order]?.validator_passed ?? null,
+          validator_passed: e.validator_passed ?? prev[e.order]?.validator_passed ?? null,
           error_message: e.error_message ?? null,
         } as StageResult,
       }));
@@ -167,10 +170,7 @@ export default function App() {
   }
 
   async function rerun(order: number, from = false) {
-    if (!runId) {
-      // no run yet → start a fresh full run instead
-      return runAll();
-    }
+    if (!runId) return runAll();
     setBusy(true);
     const url = from
       ? `/api/runs/${runId}/stages/${order}/rerun-from`
@@ -191,7 +191,6 @@ export default function App() {
     }
   }
 
-  // ---- stage CRUD ----
   async function saveStage(s: Stage) {
     const updated = await api.updateStage(s.id, s);
     setPipeline((p) =>
@@ -200,10 +199,7 @@ export default function App() {
   }
   async function reseedDefaults() {
     if (!pipeline) return;
-    const ok = confirm(
-      "Päivitetään oletusvaiheiden promptit repo-version mukaisiksi. Jatketaanko?"
-    );
-    if (!ok) return;
+    if (!confirm("Reset all stage prompts to repo defaults?")) return;
     const res = await api.reseedDefaults();
     setPipeline(res.pipeline);
     setSelectedId((id) =>
@@ -220,10 +216,10 @@ export default function App() {
     if (!pipeline) return;
     const order = Math.max(...pipeline.stages.map((s) => s.order)) + 1;
     const s = await api.addStage(pipeline.id, {
-      name: `Vaihe ${order} – uusi`,
+      name: `Stage ${order} – new`,
       order,
       enabled: true,
-      model: "deepseek/deepseek-v4-flash",
+      model: "google/gemini-2.5-flash",
       prompt_template: "",
       temperature: 0.2,
       max_tokens: 16000,
@@ -251,10 +247,7 @@ export default function App() {
     if (j < 0 || j >= movable.length) return;
     const arr = [...movable];
     [arr[idx], arr[j]] = [arr[j], arr[idx]];
-    const p = await api.reorder(
-      pipeline.id,
-      arr.map((s) => s.id)
-    );
+    const p = await api.reorder(pipeline.id, arr.map((s) => s.id));
     setPipeline(p);
   }
 
@@ -273,16 +266,14 @@ export default function App() {
     return (
       <div className="h-full flex items-center justify-center">
         <div className="bg-neutral-900 border border-neutral-700 rounded-lg p-6 w-96">
-          <div className="font-semibold mb-2">Pääsytunnus vaaditaan</div>
-          <div className="text-xs text-neutral-400 mb-3">
-            Backend on suojattu jaetulla tunnuksella (APP_TOKEN).
-          </div>
+          <div className="font-semibold mb-2">Access token required</div>
+          <div className="text-xs text-neutral-400 mb-3">Backend is protected by APP_TOKEN.</div>
           <input
             type="password"
             value={tokenDraft}
             onChange={(e) => setTokenDraft(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && saveToken()}
-            placeholder="liitä token"
+            placeholder="paste token"
             className="w-full bg-neutral-800 border border-neutral-700 rounded px-3 py-2 text-sm mb-3"
             autoFocus
           />
@@ -290,34 +281,43 @@ export default function App() {
             onClick={saveToken}
             className="w-full px-3 py-2 rounded bg-emerald-700 hover:bg-emerald-600 text-sm"
           >
-            Tallenna ja jatka
+            Save and continue
           </button>
         </div>
       </div>
     );
 
   if (!pipeline || !selected)
-    return <div className="p-8 text-neutral-400">Ladataan…</div>;
+    return <div className="p-8 text-neutral-400">Loading…</div>;
+
+  const hasRun = runId != null;
 
   return (
     <div className="h-full flex flex-col">
-      {/* top bar */}
-      <div className="flex items-center gap-3 px-4 py-2 border-b border-neutral-800 bg-neutral-900">
-        <span className="font-semibold">{pipeline.name}</span>
+      {/* ── top bar ── */}
+      <div className="flex items-center gap-2 px-4 py-2 border-b border-neutral-800 bg-neutral-950 shrink-0">
+        <span className="font-semibold text-sm text-neutral-300">{pipeline.name}</span>
+
+        {/* New Run — most important action */}
         <button
-          onClick={() => setShowValuatum(true)}
-          className="px-3 py-1.5 rounded bg-indigo-700 hover:bg-indigo-600 text-sm font-medium"
-          title="Hae FAKTAT input_data Valuatumista (fid + nimi)"
-        >
-          📊 Valuatum JSON
-        </button>
-        <button
+          onClick={newRun}
           disabled={busy}
-          onClick={runAll}
-          className="px-3 py-1.5 rounded bg-emerald-700 hover:bg-emerald-600 text-sm font-medium disabled:opacity-40"
+          className="px-3 py-1.5 rounded bg-emerald-700 hover:bg-emerald-600 text-sm font-semibold disabled:opacity-40"
+          title="Clear current run and start fresh with a new company"
         >
-          {busy ? "Ajetaan…" : "▶ Aja koko pipeline"}
+          ✚ New Run
         </button>
+
+        {/* Run all */}
+        <button
+          disabled={busy || !inputData}
+          onClick={runAll}
+          className="px-3 py-1.5 rounded bg-sky-700 hover:bg-sky-600 text-sm font-medium disabled:opacity-40"
+          title={!inputData ? "Fetch company data first (Stage 0)" : "Run all enabled stages"}
+        >
+          {busy ? "Running…" : "▶ Run all stages"}
+        </button>
+
         <label className="flex items-center gap-1 text-xs text-neutral-400">
           <input
             type="checkbox"
@@ -325,79 +325,89 @@ export default function App() {
             onChange={(e) => setStopOnFailure(e.target.checked)}
             className="accent-sky-500"
           />
-          Pysäytä jos validaattori failaa
+          Stop on failure
         </label>
+
         <div className="flex-1" />
-        <span className="text-xs text-emerald-300">
-          run-total: ${totalCost.toFixed(5)}
-        </span>
+
+        {/* cost */}
+        {hasRun && (
+          <span className="text-xs text-emerald-300 font-mono">
+            ${totalCost.toFixed(5)}
+          </span>
+        )}
+
+        {/* history */}
         <select
           onChange={(e) => e.target.value && loadRun(e.target.value)}
           value={runId ?? ""}
-          className="bg-neutral-800 border border-neutral-700 rounded px-2 py-1 text-xs"
+          className="bg-neutral-800 border border-neutral-700 rounded px-2 py-1 text-xs max-w-[220px]"
         >
-          <option value="">— ajohistoria —</option>
+          <option value="">— run history —</option>
           {runs.map((r) => (
             <option key={r.id} value={r.id}>
-              {r.created_at?.slice(0, 19)} · {r.status} · ${r.total_cost_usd?.toFixed(4)}
+              {r.created_at?.slice(0, 16)} · {r.status} · ${r.total_cost_usd?.toFixed(4)}
             </option>
           ))}
         </select>
+
         <button
           onClick={() => setShowCosts(true)}
           className="text-xs px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700"
         >
-          € kustannukset
+          💰 Costs
         </button>
-        <button
-          onClick={reseedDefaults}
-          className="text-xs px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700"
-          title="palauta oletusvaiheiden promptit repo-version mukaisiksi"
-        >
-          Päivitä promptit
-        </button>
+
+        {/* reports */}
         {reportCaps.generator && (
           <>
             <button
               disabled={!runId || reportBusy}
               onClick={() => openReport("html")}
               className="text-xs px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 disabled:opacity-40"
-              title="Generoi HTML-raportti loppuvaiheen JSONista"
             >
-              📄 raportti HTML
+              📄 HTML
             </button>
             <button
               disabled={!runId || reportBusy || !reportCaps.pdf}
               onClick={() => openReport("pdf")}
+              title={!reportCaps.pdf ? "Chrome not found — PDF unavailable" : ""}
               className="text-xs px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 disabled:opacity-40"
-              title={reportCaps.pdf ? "Generoi PDF" : "Chrome puuttuu — PDF ei käytettävissä"}
             >
               📄 PDF
             </button>
           </>
         )}
+
+        <button
+          onClick={reseedDefaults}
+          className="text-xs px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700"
+          title="Reset stage prompts to repo defaults"
+        >
+          Reset prompts
+        </button>
+
         <button
           onClick={() => api.refreshModels().then(setModels)}
           className="text-xs px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700"
-          title="päivitä mallilista"
+          title="Refresh model list from OpenRouter"
         >
-          ⟳ mallit ({models.length})
+          ⟳ models ({models.length})
         </button>
+
         <button
-          onClick={() => {
-            setTokenDraft(getToken());
-            setNeedToken(true);
-          }}
+          onClick={() => { setTokenDraft(getToken()); setNeedToken(true); }}
           className="text-xs px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700"
-          title="vaihda pääsytunnus"
+          title="Change access token"
         >
           🔒
         </button>
       </div>
 
-      {/* body */}
-      <div className="flex-1 grid grid-cols-[280px_1fr_1fr] min-h-0">
-        <div className="border-r border-neutral-800 bg-neutral-900 min-h-0">
+      {/* ── body ── */}
+      <div className="flex-1 grid grid-cols-[260px_1fr_1fr] min-h-0">
+        {/* left: stage list */}
+        <div className="border-r border-neutral-800 bg-neutral-950 overflow-auto">
           <StageList
             pipeline={pipeline}
             selectedId={selectedId}
@@ -409,23 +419,21 @@ export default function App() {
             onMove={moveStage}
           />
         </div>
-        <div className="border-r border-neutral-800 min-h-0">
+
+        {/* middle: editor */}
+        <div className="border-r border-neutral-800 overflow-hidden">
           <StageEditor
             key={selected.id}
             stage={selected}
-            models={models}
             context={context}
             inputData={inputData}
             onSave={saveStage}
             onSetInputData={setInputData}
-            onFetch={async (id) => {
-              const r = await api.fetchCompany(id);
-              if (r.ok) setInputData(r.input_data);
-              else alert(r.message);
-            }}
           />
         </div>
-        <div className="min-h-0">
+
+        {/* right: output */}
+        <div className="overflow-hidden">
           <ResultPanel
             result={results[selected.order]}
             stage={selected}
@@ -438,24 +446,9 @@ export default function App() {
         </div>
       </div>
 
-      {cmp && (
-        <CompareOverlay data={cmp} onClose={() => setCmp(null)} />
-      )}
+      {cmp && <CompareOverlay data={cmp} onClose={() => setCmp(null)} />}
       {showCosts && (
-        <CostOverlay
-          pipeline={pipeline}
-          results={results}
-          onClose={() => setShowCosts(false)}
-        />
-      )}
-      {showValuatum && (
-        <ValuatumExport
-          onUseAsInput={(data) => {
-            setInputData(data);
-            setSelectedId(pipeline.stages.find((s) => s.order === 0)?.id ?? selectedId);
-          }}
-          onClose={() => setShowValuatum(false)}
-        />
+        <CostOverlay pipeline={pipeline} results={results} onClose={() => setShowCosts(false)} />
       )}
     </div>
   );
@@ -478,19 +471,15 @@ function CompareOverlay({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex justify-between items-center mb-3">
-          <span className="font-semibold">
-            Mallivertailu — Vaihe #{data.order}
-          </span>
-          <button onClick={onClose} className="text-neutral-400 hover:text-white">
-            ✕
-          </button>
+          <span className="font-semibold">Model comparison — Stage #{data.order}</span>
+          <button onClick={onClose} className="text-neutral-400 hover:text-white">✕</button>
         </div>
         <div
           className="grid gap-3"
           style={{ gridTemplateColumns: `repeat(${data.results.length}, minmax(320px,1fr))` }}
         >
           {data.results.map((r, i) => (
-            <div key={i} className="border border-neutral-700 rounded p-2">
+            <div key={i} className="border border-neutral-700 rounded p-3">
               <div className="text-xs font-mono text-sky-300 mb-1">{r.model}</div>
               <div className="text-xs text-neutral-400 mb-2 flex gap-3">
                 <span>{r.status}</span>
@@ -501,18 +490,12 @@ function CompareOverlay({
                 <div className="text-xs text-red-300 mb-2">{r.error_message}</div>
               )}
               {r.validator_report && (
-                <div
-                  className={`text-xs mb-2 ${
-                    r.validator_report.passed ? "text-emerald-400" : "text-red-400"
-                  }`}
-                >
-                  validaattori: {r.validator_report.passed ? "läpäisi" : "failasi"}
+                <div className={`text-xs mb-2 ${r.validator_report.passed ? "text-emerald-400" : "text-red-400"}`}>
+                  validator: {r.validator_report.passed ? "passed" : "failed"}
                 </div>
               )}
               <pre className="text-[11px] whitespace-pre-wrap max-h-80 overflow-auto bg-neutral-950 p-2 rounded">
-                {r.parsed_json
-                  ? JSON.stringify(r.parsed_json, null, 2)
-                  : r.raw_response}
+                {r.parsed_json ? JSON.stringify(r.parsed_json, null, 2) : r.raw_response}
               </pre>
             </div>
           ))}

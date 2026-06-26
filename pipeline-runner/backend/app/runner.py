@@ -129,6 +129,7 @@ async def _execute_stage(stage, context, run_input_data, identifier, params):
         "stage_id": stage["id"],
         "order": stage["order"],
         "name": stage["name"],
+        "model": stage["model"],
         "started_at": started,
         "status": "running",
         "tokens_prompt": 0,
