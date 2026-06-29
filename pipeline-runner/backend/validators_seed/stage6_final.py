@@ -62,8 +62,12 @@ def _numbers_of(obj):
 
 
 def _match(val, is_pct, allowed):
+    # Sign-insensitive: Finnish prose states costs/expenses as positive magnitudes
+    # ("henkilöstökulut 5 213 tEUR") while the source stores them signed (-5213).
+    # Match on magnitude so that legitimate figure is not a false orphan.
     tol = 0.5 if is_pct else max(1.0, 0.005 * abs(val))
-    return any(abs(val - a) <= tol for a in allowed)
+    av = abs(val)
+    return any(abs(val - a) <= tol or abs(av - abs(a)) <= tol for a in allowed)
 
 
 def validate(output: dict, context: dict) -> dict:

@@ -81,9 +81,12 @@ def _is_structural(val, is_pct):
 
 
 def _match(val, is_pct, allowed):
+    # Sign-insensitive: Finnish prose states costs/expenses as positive magnitudes
+    # while the source stores them signed (e.g. -5213) — match on magnitude too.
     tol = 0.5 if is_pct else max(1.0, 0.005 * abs(val))
+    av = abs(val)
     for a in allowed:
-        if abs(val - a) <= tol:
+        if abs(val - a) <= tol or abs(av - abs(a)) <= tol:
             return True
     return False
 
