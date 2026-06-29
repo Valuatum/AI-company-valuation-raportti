@@ -131,17 +131,26 @@ def validate(output: dict, context: dict) -> dict:
     allowed, pairwise = _derive(base)
 
     # --- 1. Orphan numbers in prose -----------------------------------------
+    # Scope to NARRATIVE prose (paragraph/callout text). Tables, metric_cards,
+    # key_value and charts carry IDs, source refs, dates and structured values
+    # that need not trace to input_data — sweeping them produced false orphans.
     orphans = []
-    for path, v in _walk(output):
-        if not isinstance(v, str) or len(v) < 4:
-            continue  # only 1-3 char strings are pure labels; sweep short
-            # metric-card / table values like "12,4x" and "18 %" too
-        for m in _NUM_RE.findall(v):
-            val, is_pct = _parse(m)
-            if val is None or _is_structural(val, is_pct):
+    for sec in (output.get("sections") or []):
+        if not isinstance(sec, dict):
+            continue
+        sid = str(sec.get("id"))
+        for bi, b in enumerate(sec.get("blocks") or []):
+            if not isinstance(b, dict) or b.get("type") not in ("paragraph", "callout"):
                 continue
-            if not _match(val, is_pct, allowed):
-                orphans.append((m.strip(), path))
+            v = b.get("text")
+            if not isinstance(v, str) or len(v) < 4:
+                continue
+            for m in _NUM_RE.findall(v):
+                val, is_pct = _parse(m)
+                if val is None or _is_structural(val, is_pct):
+                    continue
+                if not _match(val, is_pct, allowed):
+                    orphans.append((m.strip(), f"section {sid} block {bi}"))
     note = "" if pairwise else " (pairwise derivation skipped: >600 input numbers)"
     if orphans:
         sample = "; ".join(f"{tok} @ {p}" for tok, p in orphans[:25])

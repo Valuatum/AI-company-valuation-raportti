@@ -9,7 +9,10 @@ import re
 # narrow NBSP (U+202F), thin space (U+2009). Both the matcher and the parser
 # must account for all of them — otherwise a correctly formatted Finnish figure
 # like "1 598 tEUR" (with an NBSP) parses to 1 and false-fails the cover.
-_NUM_RE = re.compile(r"[−-]?\d[\d    ]*(?:,\d+)?\s*%?")
+# Thousands groups must be exactly 3 digits, else a year glued to the next
+# value ("2023 1,62 %") matched as one bogus number -> false orphan.
+_SEP = "[\u0020\u00a0\u202f\u2009]"
+_NUM_RE = re.compile(r"[\u2212-]?(?:\d{1,3}(?:" + _SEP + r"\d{3})+|\d+)(?:,\d+)?\s*%?")
 _WS = re.compile(r"[\s   ]")
 
 
@@ -90,18 +93,29 @@ def validate(output: dict, context: dict) -> dict:
     # (expected_value.calculation, confidence.deciding_rule, cover) legitimately
     # contain intermediate/explanatory figures that need not all live in
     # machine_readable, so sweeping them produced false orphans.
+    # Scope to NARRATIVE prose (paragraph/callout text) only. Tables, key_value,
+    # metric_cards and charts carry source IDs, registry numbers, dates and other
+    # non-financial identifiers (e.g. a sources table in section 15) that are not
+    # meant to trace to machine_readable — sweeping them produced false orphans.
     orphans = []
-    for path, v in _walk(output.get("sections", [])):
-        if not isinstance(v, str) or len(v) < 12:
+    for sec in output.get("sections") or []:
+        if not isinstance(sec, dict):
             continue
-        for m in _NUM_RE.findall(v):
-            val, is_pct = _parse(m)
-            if val is None:
+        sid = str(sec.get("id"))
+        for bi, b in enumerate(sec.get("blocks") or []):
+            if not isinstance(b, dict) or b.get("type") not in ("paragraph", "callout"):
                 continue
-            if is_pct is False and val == int(val) and 1900 <= int(val) <= 2100:
-                continue  # year
-            if not _match(val, is_pct, allowed):
-                orphans.append(f"{m.strip()} @ {path}")
+            v = b.get("text")
+            if not isinstance(v, str) or len(v) < 12:
+                continue
+            for m in _NUM_RE.findall(v):
+                val, is_pct = _parse(m)
+                if val is None:
+                    continue
+                if is_pct is False and val == int(val) and 1900 <= int(val) <= 2100:
+                    continue  # year
+                if not _match(val, is_pct, allowed):
+                    orphans.append(f"{m.strip()} @ section {sid} block {bi}")
     chk("no section references a figure absent from machine_readable",
         not orphans,
         f"{len(orphans)} orphan(s): " + "; ".join(orphans[:25]) if orphans else "ok")
