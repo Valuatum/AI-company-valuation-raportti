@@ -6,7 +6,11 @@ import re
 
 # Finnish number formatting: thousands space (incl. NBSP), decimal comma,
 # minus as ASCII '-' or U+2212, optional trailing %.
-_NUM_RE = re.compile(r"[−-]?\d[\d  ]*(?:,\d+)?\s*%?")
+# Thousands groups must be EXACTLY 3 digits, else a year glued to the next
+# space-formatted value ("2023 12 596") matched as one impossible number
+# (202312596) that never traced -> false orphan. Now they split cleanly.
+_SEP = "[\u0020\u00a0\u202f\u2009]"  # space, NBSP, narrow NBSP, thin space
+_NUM_RE = re.compile(r"[\u2212-]?(?:\d{1,3}(?:" + _SEP + r"\d{3})+|\d+)(?:,\d+)?\s*%?")
 
 
 def _parse(tok):

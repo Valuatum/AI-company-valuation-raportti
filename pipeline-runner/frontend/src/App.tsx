@@ -25,7 +25,10 @@ export default function App() {
   const [inputData, setInputData] = useState<any>(null);
   const [runId, setRunId] = useState<string | null>(null);
   const [results, setResults] = useState<Record<number, StageResult>>({});
-  const [stopOnFailure, setStopOnFailure] = useState(true);
+  // Off by default: a colleague's run should complete end-to-end so they get a
+  // full report; the deliver-gate flags any issues at download time instead of
+  // killing the whole run on one validation hiccup.
+  const [stopOnFailure, setStopOnFailure] = useState(false);
   const [busy, setBusy] = useState(false);
   const [runStartAt, setRunStartAt] = useState<number | null>(null);
   const [nowTick, setNowTick] = useState(Date.now());

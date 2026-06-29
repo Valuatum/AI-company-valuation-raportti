@@ -63,9 +63,10 @@ def _stages():
         {
             "order": 3,
             "name": "Vaihe 3 - Pisteytys + numero-osiot",
-            "model": "deepseek/deepseek-v4-flash",
+            "model": "deepseek/deepseek-v4-pro",
             "prompt_template": _load_prompt("3_pisteytys_numero_osiot.txt"),
             "expects_json": True,
+            "max_tokens": 32000,
             "validator_code": _load_validator("stage3_numbers.py"),
             "input_mapping": {
                 "input_data": "Vaihe 0 FAKTAT",
