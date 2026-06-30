@@ -1,4 +1,12 @@
-import type { StageStatus } from "./types";
+import type { StageResult, StageStatus } from "./types";
+
+// A stage was auto-corrected if the runner flagged it, or (fallback) the
+// "🔧 Automaattinen korjaus" entry is present in its validator checklist.
+export const wasAutoCorrected = (r?: StageResult): boolean =>
+  !!r?.validator_report?.auto_corrected ||
+  (r?.validator_report?.checks || []).some((c) =>
+    (c.name || "").includes("Automaattinen korjaus")
+  );
 
 export const STATUS_COLOR: Record<StageStatus, string> = {
   pending: "bg-neutral-600",

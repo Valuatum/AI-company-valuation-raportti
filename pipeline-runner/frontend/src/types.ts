@@ -33,6 +33,7 @@ export interface ValidatorCheck {
 export interface ValidatorReport {
   passed: boolean;
   checks: ValidatorCheck[];
+  auto_corrected?: boolean;
 }
 
 export type StageStatus =

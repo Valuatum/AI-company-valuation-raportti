@@ -1,7 +1,7 @@
 import { useState } from "react";
 import Editor from "@monaco-editor/react";
 import type { ModelInfo, Stage, StageResult } from "../types";
-import { STATUS_COLOR, STATUS_LABEL } from "../status";
+import { STATUS_COLOR, STATUS_LABEL, wasAutoCorrected } from "../status";
 import { ValidatorChecklist } from "./ValidatorChecklist";
 import { PRESET_IDS, priceText } from "../modelPresets";
 
@@ -43,6 +43,14 @@ export function ResultPanel({
       <div className="flex items-center gap-2 px-3 py-2.5 border-b border-neutral-800 flex-wrap shrink-0">
         <span className={`w-3 h-3 rounded-full shrink-0 ${statusColor}`} />
         <span className="font-semibold text-sm">{statusLabel}</span>
+        {wasAutoCorrected(result) && (
+          <span
+            title="Tämä vaihe korjattiin automaattisesti. Katso tarkistuslistasta mikä korjattiin."
+            className="text-xs px-1.5 py-0.5 rounded bg-amber-900/60 text-amber-200 font-medium"
+          >
+            🔧 Korjattu automaattisesti
+          </span>
+        )}
         {result?.finish_reason && (
           <span
             className={`text-xs px-1.5 py-0.5 rounded ${

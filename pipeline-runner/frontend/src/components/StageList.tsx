@@ -1,5 +1,5 @@
 import type { Pipeline, StageResult } from "../types";
-import { STATUS_COLOR, STATUS_LABEL } from "../status";
+import { STATUS_COLOR, STATUS_LABEL, wasAutoCorrected } from "../status";
 
 export function StageList({
   pipeline,
@@ -49,7 +49,12 @@ export function StageList({
                   title={res ? STATUS_LABEL[res.status] : "not run"}
                 />
                 <div className="flex-1 min-w-0">
-                  <div className="text-sm truncate leading-tight">{s.name}</div>
+                  <div className="text-sm truncate leading-tight">
+                    {wasAutoCorrected(res) && (
+                      <span title="Korjattu automaattisesti — tarkista" className="mr-1">🔧</span>
+                    )}
+                    {s.name}
+                  </div>
                   <div className="text-[10px] text-neutral-500 font-mono truncate mt-0.5">
                     {s.model === "__data_fetcher__" ? "data fetcher" : modelShort}
                   </div>

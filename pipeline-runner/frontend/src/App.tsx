@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { api, getToken, setToken } from "./api";
 import type { ModelInfo, Pipeline, Run, Stage, StageResult } from "./types";
+import { wasAutoCorrected } from "./status";
 import { StageList } from "./components/StageList";
 import { StageEditor } from "./components/StageEditor";
 import { ResultPanel } from "./components/ResultPanel";
@@ -411,6 +412,11 @@ export default function App() {
         )
     : [];
 
+  // Stages the pipeline auto-corrected mid-run — surface for review.
+  const autoCorrected = hasRun
+    ? runStages.filter((s) => wasAutoCorrected(results[s.order]))
+    : [];
+
   return (
     <div className="h-full flex flex-col">
       {/* ── top bar ── */}
@@ -460,6 +466,17 @@ export default function App() {
         {/* report actions — grouped, only meaningful once a run exists */}
         {reportCaps.generator && (
           <div className="flex items-center gap-1.5 pl-2 ml-1 border-l border-neutral-800">
+            {hasRun && autoCorrected.length > 0 && (
+              <span
+                title={
+                  "Korjattu automaattisesti (tarkista): " +
+                  autoCorrected.map((s) => `Vaihe ${s.order}`).join(", ")
+                }
+                className="text-xs px-2 py-1 rounded bg-amber-900/60 text-amber-200 font-medium"
+              >
+                🔧 {autoCorrected.length} korjattu
+              </span>
+            )}
             {hasRun && reportIssues.length > 0 && (
               <span
                 title={"Tarkista ennen toimitusta:\n• " + reportIssues.join("\n• ")}

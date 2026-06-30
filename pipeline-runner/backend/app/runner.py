@@ -401,6 +401,7 @@ async def run_stages(run, stages, only=None, from_order=None):
                 # Record what was auto-fixed so it stays auditable in the stage's
                 # checklist even though the stage now passes.
                 vr = retry.get("validator_report") or {"passed": True, "checks": []}
+                vr["auto_corrected"] = True
                 vr.setdefault("checks", []).insert(0, {
                     "name": "🔧 Automaattinen korjaus",
                     "passed": True,
