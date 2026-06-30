@@ -236,6 +236,36 @@ def _pdf_page_count(path):
     return len(re.findall(rb"/Type\s*/Page(?![s])", data))
 
 
+def test_self_heal_retries_failed_stage(monkeypatch):
+    import asyncio
+    from app import runner, seed, store
+
+    seed.ensure_seeded()
+    pid = store.list_pipelines()[0]["id"]
+    rid = store.create_run(pid, {"meta": {"company_name": "X"}}, False)
+    p = store.get_pipeline(pid)
+    calls = {"n": 0}
+
+    async def fake_exec(stage, ctx, inp, ident, params):
+        calls["n"] += 1
+        st = "validation_failed" if calls["n"] == 1 else "ok"
+        return {**runner._base(stage), "status": st, "parsed_json": {"scoring": {}},
+                "validator_passed": st == "ok", "cost_usd": 0.0,
+                "tokens_prompt": 0, "tokens_completion": 0}
+
+    monkeypatch.setattr(runner, "_execute_stage", fake_exec)
+    run = store.get_run(rid)
+
+    async def drive():
+        async for _ in runner.run_stages(run, p["stages"], only=3):
+            pass
+
+    asyncio.run(drive())
+    assert calls["n"] == 2  # failed once, retried
+    s3 = [r for r in store.get_run(rid)["results"] if r["order"] == 3][0]
+    assert s3["status"] == "ok"  # self-healed on the retry
+
+
 def test_deliver_gate_blocks_unhealthy_run_unless_forced():
     from starlette.testclient import TestClient
     from app import main, seed, store

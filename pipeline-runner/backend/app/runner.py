@@ -332,8 +332,28 @@ async def run_stages(run, stages, only=None, from_order=None):
         yield _ev("stage", order=s["order"], status="running", name=s["name"])
 
         res = await _execute_stage(s, context, input_data, identifier, params)
-        store.upsert_result(rid, res)
         store.add_run_cost(rid, res.get("cost_usd", 0.0))
+
+        # Self-heal: a transient model slip — a blank required field, a one-off
+        # malformed/parse error — usually fixes itself on a fresh attempt. Retry a
+        # failed model stage ONCE before accepting the failure. Skip when a spend
+        # cap is hit or the error is a deterministic substitution error (a retry
+        # cannot help those). Keep whichever attempt came out best.
+        if (res["status"] in ("error", "validation_failed")
+                and s["order"] >= 1
+                and "variable {{" not in (res.get("error_message") or "")
+                and not _spend_cap_exceeded(rid)):
+            store.upsert_result(rid, {**_base(s), "status": "running",
+                                      "started_at": _now()})
+            yield _ev("stage", order=s["order"], status="running",
+                      name=s["name"], retry=True)
+            retry = await _execute_stage(s, context, input_data, identifier, params)
+            store.add_run_cost(rid, retry.get("cost_usd", 0.0))
+            rank = {"ok": 2, "validation_failed": 1, "error": 0}
+            if rank.get(retry["status"], 0) > rank.get(res["status"], 0):
+                res = retry
+
+        store.upsert_result(rid, res)
 
         if res["status"] in ("ok", "validation_failed"):
             _contribute(context, s, _output_value(res))
