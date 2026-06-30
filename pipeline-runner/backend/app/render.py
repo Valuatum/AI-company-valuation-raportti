@@ -154,6 +154,64 @@ def _fmt_teur(n):
     return f"{_fmt(n)} tEUR"
 
 
+# A report renders its *headline* monetary figures in one unit chosen from the
+# largest figure on the cover: tEUR up to ~10 M€, then M€, then mrd. €. Without
+# this a large-cap report prints a seven-digit tEUR number on the 50pt cover
+# ("5 100 000 tEUR"), which reads as broken. Detail tables stay in tEUR.
+_PURE_TEUR_RE = re.compile(r"^\s*(-?\d[\d\s  ]*(?:[.,]\d+)?)\s*tEUR\s*$", re.I)
+
+
+def _scale_from_teur(teur):
+    """(divisor, unit_label, decimals) for a tEUR magnitude."""
+    a = abs(teur or 0)
+    if a >= 1_000_000:
+        return 1_000_000.0, "mrd. €", 2
+    if a >= 10_000:
+        return 1_000.0, "M€", 1
+    return 1.0, "tEUR", 0
+
+
+def _report_scale(report, derived):
+    """One headline unit for the whole report, from the largest cover figure."""
+    cand = []
+    sc = report.get("_scenarios") or {}
+    for k in ("expected_value_teur", "realistic_base_case_teur"):
+        v = _to_num(sc.get(k))
+        if v is not None:
+            cand.append(v)
+    cover = report.get("cover") or {}
+    for k in ("headline_value", "base_case_value"):
+        v = _to_num(_short(cover.get(k)))
+        if v is not None:
+            cand.append(v)
+    rng = (derived or {}).get("range") or {}
+    for k in ("low", "high"):
+        if isinstance(rng.get(k), (int, float)):
+            cand.append(rng[k])
+    return _scale_from_teur(max((abs(c) for c in cand), default=0))
+
+
+def _fmt_scaled(teur, scale):
+    div, unit, dec = scale
+    if teur is None:
+        return "–"
+    return f"{_fmt(teur / div, dec)} {unit}"
+
+
+def _scaled_cover_str(s, scale):
+    """Re-express a single pure '<n> tEUR' cover string in the report unit. Any
+    other string (range, prose, non-numeric) is returned cleaned but unscaled."""
+    div, unit, dec = scale
+    cleaned = _short(s)
+    if div == 1.0:
+        return cleaned
+    m = _PURE_TEUR_RE.match(cleaned)
+    if not m:
+        return cleaned
+    n = _to_num(m.group(1))
+    return f"{_fmt(n / div, dec)} {unit}" if n is not None else cleaned
+
+
 _URL_CELL_RE = re.compile(r"^\s*https?://(?:www\.)?([^/\s]+)(?:/\S*)?\s*$", re.I)
 
 
@@ -447,13 +505,14 @@ def _svg_heatmap(x_axis, series):
 # --------------------------------------------------------------------------- #
 # range bar + confidence pills (HTML/CSS, like the original)
 # --------------------------------------------------------------------------- #
-def _range_bar(low, high, mid, caption="Arvostusväli", caption_right=""):
+def _range_bar(low, high, mid, caption="Arvostusväli", caption_right="", scale=None):
     if low is None or high is None:
         return ""
-    span = (high - low) or 1
+    div, unit, dec = scale or (1.0, "tEUR", 0)
+    span = (high - low) or 1  # ratios from raw values; only labels are scaled
     midpct = 50 if mid is None else max(0, min(100, (mid - low) / span * 100))
-    mid_lab = (f'<div class="rb-lab mid" style="left:{midpct:.1f}%;">{_fmt(mid)}'
-               f'<span class="lu"> tEUR</span></div>' if mid is not None else "")
+    mid_lab = (f'<div class="rb-lab mid" style="left:{midpct:.1f}%;">{_fmt(mid / div, dec)}'
+               f'<span class="lu"> {unit}</span></div>' if mid is not None else "")
     mid_tick = (f'<div class="rb-tick mid" style="left:{midpct:.1f}%;"></div>'
                 if mid is not None else "")
     return (
@@ -463,10 +522,10 @@ def _range_bar(low, high, mid, caption="Arvostusväli", caption_right=""):
         '<div class="rb-track"><div class="rb-line"></div>'
         '<div class="rb-band" style="left:0%; right:0%;"></div>'
         '<div class="rb-tick end" style="left:0%;"></div>'
-        f'<div class="rb-lab" style="left:0%;">{_fmt(low)}</div>'
+        f'<div class="rb-lab" style="left:0%;">{_fmt(low / div, dec)}</div>'
         f'{mid_tick}{mid_lab}'
         '<div class="rb-tick end" style="left:100%;"></div>'
-        f'<div class="rb-lab" style="left:100%;">{_fmt(high)}</div>'
+        f'<div class="rb-lab" style="left:100%;">{_fmt(high / div, dec)}</div>'
         '</div></div>'
     )
 
@@ -699,8 +758,17 @@ def _ordered_sections(report):
     return sorted(secs, key=lambda s: SECTION_ORDER.index(str(s.get("id"))))
 
 
-def _brandmark():
-    return '<span class="brandmark"><i></i>Valuatum</span>'
+def _brand(report):
+    """(display name, legal name) — defaults keep the Valuatum branding, but a
+    white-label tenant can override via meta.brand_name / meta.brand_legal_name."""
+    m = report.get("meta") or {}
+    name = (str(m.get("brand_name") or "").strip()) or "Valuatum"
+    legal = (str(m.get("brand_legal_name") or "").strip()) or "Valuatum Oy"
+    return name, legal
+
+
+def _brandmark(report):
+    return f'<span class="brandmark"><i></i>{_esc(_brand(report)[0])}</span>'
 
 
 # Running header/footer + page numbers are now CSS @page margin boxes (see
@@ -717,16 +785,18 @@ def _footer():
 def _cover(report, derived):
     cover = report.get("cover") or {}
     meta = report.get("meta") or {}
+    _, legal = _brand(report)
+    scale = _report_scale(report, derived)
     hv = cover.get("headline_value")    # probability-weighted expected value
     bcv = cover.get("base_case_value")  # realistic base case (DCF/EVA-based)
     rng = derived.get("range")
     range_html = ""
     if rng:
         range_html = _range_bar(rng["low"], rng["high"], rng["mid"],
-                                caption="Arvostusväli", caption_right="skenaariot")
+                                caption="Arvostusväli", caption_right="skenaariot", scale=scale)
     meta_bits = [f'Y-tunnus {_esc(meta.get("y_tunnus"))}' if meta.get("y_tunnus") else "",
                  _esc(meta.get("industry")),
-                 f'{_esc(meta.get("report_date"))} · Valuatum Oy' if meta.get("report_date") else ""]
+                 f'{_esc(meta.get("report_date"))} · {_esc(legal)}' if meta.get("report_date") else ""]
     meta_lines = "<br>".join(x for x in meta_bits if x)
     conf = report.get("confidence") or {}
 
@@ -739,43 +809,79 @@ def _cover(report, derived):
     base_num = _to_num(_short(bcv)) if bcv not in (None, "") else None
     exp_num = _to_num(_short(hv)) if hv not in (None, "") else None
 
-    sec_html = ""
-    if hv not in (None, "") and (base_num is None or exp_num is None
-                                 or abs((exp_num or 0) - (base_num or 0)) > 1):
-        sec_html = (f'<div class="cv-big" style="font-size:26pt">'
-                    f'<span class="cap">Skenaarioilla painotettu odotusarvo</span>'
-                    f'{html.escape(_short(hv))}</div>')
-    note = ""
-    if base_num is not None and exp_num is not None:
-        gap = max(1.0, 0.02 * abs(base_num))
-        if exp_num > base_num + gap:
-            note = ("Skenaarioilla painotettu odotusarvo on base casea korkeampi "
-                    "optimistisen skenaarion vuoksi — arvo nojaa onnistuvaan kasvuun.")
-        elif exp_num < base_num - gap:
-            note = ("Skenaarioilla painotettu odotusarvo on base casea matalampi, "
-                    "koska pessimistinen skenaario painaa todennäköisyyspainotettua keskiarvoa.")
-    note_html = f'<div class="cv-note">{_esc(note)}</div>' if note else ""
-    second_block = sec_html + note_html
+    # When the realistic base case does not support positive owner value, a
+    # positive expected value comes only from a low-probability optimistic
+    # scenario — surfacing it as a 26pt hero is the tool talking its book. Demote
+    # it to a plain option-value line instead.
+    zero_floor = base_num is not None and base_num <= 0
+    if zero_floor:
+        second_block = ('<div class="cv-note" style="margin-top:2px">'
+                        'Realistinen base case ei tue positiivista omistaja-arvoa. '
+                        'Mahdollinen arvo on optio- tai strategista arvoa, joka on '
+                        'kuvattu skenaarioissa eikä esitetä raportin päälukuna.</div>')
+    else:
+        sec_html = ""
+        if hv not in (None, "") and (base_num is None or exp_num is None
+                                     or abs((exp_num or 0) - (base_num or 0)) > 1):
+            sec_html = (f'<div class="cv-big" style="font-size:26pt">'
+                        f'<span class="cap">Skenaarioilla painotettu odotusarvo</span>'
+                        f'{html.escape(_scaled_cover_str(hv, scale))}</div>')
+        note = ""
+        if base_num is not None and exp_num is not None:
+            gap = max(1.0, 0.02 * abs(base_num))
+            if exp_num > base_num + gap:
+                note = ("Skenaarioilla painotettu odotusarvo on base casea korkeampi "
+                        "optimistisen skenaarion vuoksi — arvo nojaa onnistuvaan kasvuun.")
+            elif exp_num < base_num - gap:
+                note = ("Skenaarioilla painotettu odotusarvo on base casea matalampi, "
+                        "koska pessimistinen skenaario painaa todennäköisyyspainotettua keskiarvoa.")
+        note_html = f'<div class="cv-note">{_esc(note)}</div>' if note else ""
+        second_block = sec_html + note_html
 
     return (
         '<section class="page cover">'
-        f'<div class="cv-top">{_brandmark_cover()}<span class="cv-tag">Equity Research · AI</span></div>'
+        f'<div class="cv-top">{_brandmark_cover(report)}<span class="cv-tag">Equity Research · AI</span></div>'
         '<div class="cv-mid">'
         '<div class="cv-kicker">AI-Arvonmääritysraportti</div>'
         f'<h1>{_esc(meta.get("company_name"))}</h1>'
         f'<div class="cv-meta">{meta_lines}</div></div>'
         '<div class="cv-headline">'
-        f'<div class="cv-big"><span class="cap">{_esc(hero_label)}</span>{html.escape(_short(hero_val))}</div>'
+        f'<div class="cv-big"><span class="cap">{_esc(hero_label)}</span>'
+        f'{html.escape(_scaled_cover_str(hero_val, scale))}</div>'
         f'{range_html}</div>'
         + (f'<div class="cv-headline" style="border-top:none;padding-top:14px;margin-top:14px">'
            f'{second_block}</div>' if second_block else "")
         + _conf_pills(conf.get("level"), conf.get("deciding_rule"))
+        + _cover_colophon(report, meta)
         + '</section>'
     )
 
 
-def _brandmark_cover():
-    return '<span class="cv-brand"><i></i>Valuatum</span>'
+def _cover_colophon(report, meta):
+    """Provenance + sign-off block at the foot of the cover: makes the report an
+    auditable, signable artifact (answers the reseller's 'I put my name on this')
+    without adding a page. Run-id is shown only when the caller attaches it."""
+    prov = report.get("_provenance") or {}
+    rid_short = re.sub(r"[^0-9A-Za-z]", "", str(prov.get("run_id") or ""))[:8]
+    bits = [f'Laadittu {_esc(meta.get("report_date"))}' if meta.get("report_date") else "",
+            f'Raportti-ID {html.escape(rid_short)}' if rid_short else ""]
+    line = " · ".join(x for x in bits if x)
+    return (
+        '<div class="cv-colophon">'
+        + (f'<div class="cv-colo-line">{line}</div>' if line else "")
+        + '<div class="cv-colo-note">Laadittu automaattisesti tilinpäätös- ja '
+          'markkinadatasta. Tarkoitettu asiantuntijan tarkastettavaksi ja '
+          'allekirjoitettavaksi ennen päätöksiä.</div>'
+        + '<div class="cv-colo-sig">'
+          '<span>Tarkastanut ja hyväksynyt<span class="cv-sigline"></span></span>'
+          '<span>Päiväys<span class="cv-sigline short"></span></span>'
+          '</div>'
+        + '</div>'
+    )
+
+
+def _brandmark_cover(report):
+    return f'<span class="cv-brand"><i></i>{_esc(_brand(report)[0])}</span>'
 
 
 def _snapshot(report, derived):
@@ -875,41 +981,45 @@ def _section(report, sec, derived=None):
 # Mandatory legal disclaimer (master spec §16, exact text). Guaranteed into the
 # PDF even if the stage-6 model drops section 16 — selling an automated valuation
 # with no "ei sijoitusneuvontaa" notice is real legal exposure.
-_DISCLAIMER_TEXT = (
-    "Tämä raportti on tuotettu automaattisesti yleiseen tietoon perustuvana "
-    "analyysinä. Se ei ole sijoitusneuvontaa, tilintarkastusta, käyvän arvon "
-    "lausunto (fairness opinion) eikä sellaisenaan sovellu vero- tai "
-    "oikeusriitojen perusteeksi ilman asiantuntijan erillistä arviota. "
-    "Valuatum Oy ei vastaa raportin perusteella tehdyistä päätöksistä."
-)
+def _disclaimer_text(legal="Valuatum Oy"):
+    return (
+        "Tämä raportti on tuotettu automaattisesti yleiseen tietoon perustuvana "
+        "analyysinä. Se ei ole sijoitusneuvontaa, tilintarkastusta, käyvän arvon "
+        "lausunto (fairness opinion) eikä sellaisenaan sovellu vero- tai "
+        "oikeusriitojen perusteeksi ilman asiantuntijan erillistä arviota. "
+        f"{legal} ei vastaa raportin perusteella tehdyistä päätöksistä."
+    )
 
 
-def _disclaimer_section():
+def _disclaimer_section(legal="Valuatum Oy"):
     return {"id": "16", "title": "Vastuuvapaus", "blocks": [
-        {"type": "paragraph", "text": _DISCLAIMER_TEXT}]}
+        {"type": "paragraph", "text": _disclaimer_text(legal)}]}
 
 
-def _ensure_disclaimer(sections):
+def _ensure_disclaimer(sections, legal="Valuatum Oy"):
     """Guarantee a section 16 carrying the legal disclaimer text."""
     out = list(sections)
     s16 = next((s for s in out if str(s.get("id")) == "16"), None)
     if s16 is None:
-        out.append(_disclaimer_section())
+        out.append(_disclaimer_section(legal))
     elif "sijoitusneuvo" not in str(s16).lower():
-        out[out.index(s16)] = _disclaimer_section()
+        out[out.index(s16)] = _disclaimer_section(legal)
     return out
 
 
 def _cover_guard(report, derived):
     cover = report.get("cover") or {}
     text = _norm_ws(_strip_tags(_cover(report, derived)))
+    scale = _report_scale(report, derived)
     missing = []
     for label, val in (("headline_value", cover.get("headline_value")),
                        ("base_case_value", cover.get("base_case_value"))):
         if val is None or str(val).strip() == "":
             missing.append(f"{label} puuttuu/tyhjä")
             continue
-        if _norm_ws(_short(val)) not in text:
+        # a figure is intact if its raw OR its report-unit-scaled form rendered
+        if (_norm_ws(_short(val)) not in text
+                and _norm_ws(_scaled_cover_str(val, scale)) not in text):
             missing.append(f"{label}={val!r}")
     if missing:
         raise CoverGuardError("Kannen luvut eivät renderöityneet eheinä: "
@@ -940,17 +1050,20 @@ def _css_str(v):
 
 def _page_css(report):
     meta = report.get("meta") or {}
+    name, legal = _brand(report)
     bits = [meta.get("company_name"), meta.get("y_tunnus"), meta.get("report_date")]
     head_right = _css_str(" · ".join(str(x) for x in bits if x))
+    head_left = _css_str(f"{name} · AI-Arvonmääritysraportti")
+    foot_left = _css_str(legal)
     # Running header/footer + page numbers live in @page margin boxes so they
     # repeat on EVERY page — including section continuations — which the baked-in
     # HTML header could not do. Suppressed on the full-bleed cover.
     return f"""
 @page {{ size: A4; margin: 15mm 15mm 15mm;
-  @top-left {{ content: "Valuatum · AI-Arvonmääritysraportti"; font-family: {SANS};
+  @top-left {{ content: "{head_left}"; font-family: {SANS};
     font-size: 7.4pt; color: {C['gray']}; }}
   @top-right {{ content: "{head_right}"; font-family: {SANS}; font-size: 7.4pt; color: {C['gray']}; }}
-  @bottom-left {{ content: "Valuatum Oy"; font-family: {SANS}; font-size: 7.2pt; color: {C['gray']}; }}
+  @bottom-left {{ content: "{foot_left}"; font-family: {SANS}; font-size: 7.2pt; color: {C['gray']}; }}
   @bottom-right {{ content: counter(page); font-family: {SANS}; font-size: 8pt; color: {C['gray']}; }}
 }}
 @page cover {{ margin: 0;
@@ -968,7 +1081,7 @@ def render_html(report):
         _cover_guard(report, derived)
     except CoverGuardError:
         pass  # non-fatal: render with whatever the cover carries, never 500
-    sections = _ensure_disclaimer(_ordered_sections(report))
+    sections = _ensure_disclaimer(_ordered_sections(report), _brand(report)[1])
     # Snapshot page intentionally omitted (design contract — section 1 TIIVISTELMÄ
     # carries the key figures; its derived visuals now live in section 8).
     body = (_cover(report, derived)
@@ -1119,6 +1232,13 @@ table.tbl tbody tr:nth-child(even) td{ background:#FAFBFA; }
 .cv-big .cap{ display:block; font-family:var(--sans); font-size:8.5pt; font-weight:700; color:var(--gray);
   text-transform:uppercase; letter-spacing:.08em; margin-bottom:8px; white-space:normal; }
 .cv-note{ margin-top:10px; font-size:9pt; color:var(--gray); max-width:160mm; line-height:1.45; }
+.cv-colophon{ margin-top:auto; padding-top:16px; border-top:1px solid var(--line); font-size:8pt; color:var(--gray); }
+.cv-colo-line{ font-weight:600; letter-spacing:.02em; font-variant-numeric:tabular-nums lining-nums; }
+.cv-colo-note{ margin-top:5px; max-width:150mm; line-height:1.45; }
+.cv-colo-sig{ display:flex; gap:30px; margin-top:14px; font-size:8.4pt; }
+.cv-colo-sig > span{ display:flex; align-items:baseline; gap:9px; white-space:nowrap; }
+.cv-sigline{ display:inline-block; width:48mm; border-bottom:1px solid var(--line-strong); }
+.cv-sigline.short{ width:26mm; }
 
 /* scenario panels */
 .scen{ border:1px solid var(--line-strong); border-top:3px solid var(--green); padding:11px 13px; margin:11px 0; page-break-inside:avoid; }

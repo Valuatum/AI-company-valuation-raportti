@@ -19,11 +19,18 @@ def generator_available() -> bool:
     return True
 
 
+def _with_provenance(rid: str, report_json: dict) -> dict:
+    """Attach the run id so the rendered cover can stamp an auditable Raportti-ID."""
+    if isinstance(report_json, dict):
+        report_json.setdefault("_provenance", {})["run_id"] = rid
+    return report_json
+
+
 def generate_html(rid: str, report_json: dict) -> str:
     """Render assembled JSON to a standalone HTML file."""
     _ensure_dir()
     html_path = os.path.join(REPORTS_DIR, f"{rid}.html")
-    html = render.render_html(report_json)
+    html = render.render_html(_with_provenance(rid, report_json))
     with open(html_path, "w", encoding="utf-8") as f:
         f.write(html)
     return html_path
@@ -33,4 +40,4 @@ def generate_pdf(rid: str, report_json: dict) -> str:
     """Render assembled JSON to a PDF file with headless Chrome."""
     _ensure_dir()
     pdf_path = os.path.join(REPORTS_DIR, f"{rid}.pdf")
-    return render.render_pdf(report_json, pdf_path)
+    return render.render_pdf(_with_provenance(rid, report_json), pdf_path)
