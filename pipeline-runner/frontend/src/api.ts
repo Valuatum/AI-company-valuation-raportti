@@ -110,6 +110,13 @@ export const api = {
   },
 
   runs: () => req("/api/runs").then((r) => j<any[]>(r)),
+  orders: () => req("/api/orders").then((r) => j<any[]>(r)),
+  setOrderStatus: (oid: string, status: string) =>
+    req(`/api/orders/${oid}`, {
+      method: "PATCH",
+      headers: jsonHeaders,
+      body: JSON.stringify({ status }),
+    }).then((r) => j<any>(r)),
   run: (id: string) => req(`/api/runs/${id}`).then((r) => j<Run>(r)),
   deleteRun: (id: string) =>
     req(`/api/runs/${id}`, { method: "DELETE" }).then((r) => j<{ ok: boolean }>(r)),

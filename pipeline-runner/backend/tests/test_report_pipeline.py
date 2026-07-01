@@ -462,6 +462,31 @@ def test_deliver_gate_blocks_unhealthy_run_unless_forced():
         assert c.get(f"/api/runs/{rid}/report.html?force=1").status_code == 200  # override
 
 
+def test_public_order_intake_and_honeypot():
+    from starlette.testclient import TestClient
+    from app import main, store
+
+    with TestClient(main.app) as c:
+        r = c.post("/api/orders", json={
+            "company": "Testi Oy / 1234567-8", "email": "omistaja@testi.fi",
+            "user_input": "WACC 10 %, myynti 2 v sisällä"})
+        assert r.status_code == 200 and r.json()["ok"]
+        oid = r.json()["order_id"]
+        assert any(o["id"] == oid and o["status"] == "open"
+                   for o in store.list_orders())
+        # honeypot filled -> pretend success, store nothing
+        r2 = c.post("/api/orders", json={
+            "company": "Bot Oy", "email": "bot@spam.io", "website": "http://x"})
+        assert r2.status_code == 200 and "order_id" not in r2.json()
+        assert not any(o["company"] == "Bot Oy" for o in store.list_orders())
+        # bad email rejected by schema
+        assert c.post("/api/orders", json={
+            "company": "X Oy", "email": "eiemail"}).status_code == 422
+        store.set_order_status(oid, "delivered")
+        assert any(o["id"] == oid and o["status"] == "delivered"
+                   for o in store.list_orders())
+
+
 def test_delete_run_removes_run_and_results():
     from starlette.testclient import TestClient
     from app import main, seed, store

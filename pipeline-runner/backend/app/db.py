@@ -82,6 +82,14 @@ CREATE TABLE IF NOT EXISTS stage_results (
     finished_at TEXT,
     model TEXT
 );
+CREATE TABLE IF NOT EXISTS orders (
+    id TEXT PRIMARY KEY,
+    company TEXT NOT NULL,
+    email TEXT NOT NULL,
+    user_input TEXT,
+    status TEXT NOT NULL DEFAULT 'open',
+    created_at TEXT NOT NULL
+);
 """
 
 _STATEMENTS = [s.strip() for s in SCHEMA.split(";") if s.strip()]

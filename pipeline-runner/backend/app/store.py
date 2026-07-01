@@ -417,3 +417,25 @@ def costs_summary(limit=200):
         "by_model": sorted(by_model.values(), key=lambda x: -x["cost_usd"]),
         "runs": out_runs,
     }
+
+
+# ---- website orders (public intake, operator fulfils) -----------------------
+
+def create_order(company, email, user_input=None):
+    oid = _uuid()
+    db.execute(
+        "INSERT INTO orders(id,company,email,user_input,status,created_at) "
+        "VALUES(?,?,?,?,?,?)",
+        (oid, company, email, user_input, "open", _now()),
+    )
+    return oid
+
+
+def list_orders(limit=200):
+    return [dict(r) for r in db.query(
+        "SELECT * FROM orders ORDER BY created_at DESC LIMIT ?", (limit,))]
+
+
+def set_order_status(oid, status):
+    db.execute("UPDATE orders SET status=? WHERE id=?", (status, oid))
+    return db.query_one("SELECT * FROM orders WHERE id=?", (oid,))

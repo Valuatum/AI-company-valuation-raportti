@@ -6,6 +6,7 @@ import { StageList } from "./components/StageList";
 import { StageEditor } from "./components/StageEditor";
 import { ResultPanel } from "./components/ResultPanel";
 import { CostOverlay } from "./components/CostOverlay";
+import { OrdersOverlay } from "./components/OrdersOverlay";
 
 const WELL_KNOWN: Record<number, string> = {
   0: "input_data",
@@ -38,6 +39,8 @@ export default function App() {
   const [runs, setRuns] = useState<any[]>([]);
   const [cmp, setCmp] = useState<{ order: number; results: any[] } | null>(null);
   const [showCosts, setShowCosts] = useState(false);
+  const [showOrders, setShowOrders] = useState(false);
+  const [openOrders, setOpenOrders] = useState(0);
   const [reportCaps, setReportCaps] = useState({ generator: false, pdf: false });
   const [reportBusy, setReportBusy] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -59,6 +62,9 @@ export default function App() {
     api.models().then(setModels).catch(() => {});
     api.runs().then(setRuns).catch(() => {});
     api.reportCapabilities().then(setReportCaps).catch(() => {});
+    api.orders()
+      .then((os) => setOpenOrders(os.filter((o: any) => o.status === "open").length))
+      .catch(() => {});
   }
 
   useEffect(() => {
@@ -528,6 +534,9 @@ export default function App() {
                 <MenuItem onClick={() => { setShowCosts(true); setMenuOpen(false); }}>
                   💰 Kustannukset
                 </MenuItem>
+                <MenuItem onClick={() => { setShowOrders(true); setMenuOpen(false); }}>
+                  📥 Tilaukset{openOrders > 0 ? ` (${openOrders} avointa)` : ""}
+                </MenuItem>
                 <label className="flex items-center gap-2 px-3 py-1.5 hover:bg-neutral-800 cursor-pointer text-neutral-200">
                   <input
                     type="checkbox"
@@ -666,6 +675,7 @@ export default function App() {
       {showCosts && (
         <CostOverlay pipeline={pipeline} results={results} onClose={() => setShowCosts(false)} />
       )}
+      {showOrders && <OrdersOverlay onClose={() => setShowOrders(false)} />}
       {previewUrl && (
         <PreviewOverlay
           url={previewUrl}

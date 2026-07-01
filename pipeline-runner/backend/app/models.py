@@ -56,6 +56,18 @@ class FetchIn(BaseModel):
     params: dict[str, Any] = Field(default_factory=dict)
 
 
+class OrderIn(BaseModel):
+    # Public website order intake. Lengths capped: this endpoint is unauthenticated.
+    company: str = Field(min_length=2, max_length=200)
+    email: str = Field(min_length=5, max_length=200, pattern=r".+@.+\..+")
+    user_input: str = Field(default="", max_length=4000)
+    website: str = ""  # honeypot — humans leave it empty
+
+
+class OrderStatusIn(BaseModel):
+    status: str = Field(pattern=r"^(open|in_progress|delivered|spam)$")
+
+
 class ValidateIn(BaseModel):
     validator_code: str
     output: dict[str, Any]

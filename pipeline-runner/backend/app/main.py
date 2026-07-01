@@ -6,7 +6,7 @@ import os
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
 from sse_starlette.sse import EventSourceResponse
@@ -15,8 +15,8 @@ load_dotenv()
 
 from . import openrouter, report, runner, seed, store, validators, valuatum  # noqa: E402
 from .models import (  # noqa: E402
-    CompareIn, FetchIn, PipelineIn, ReorderIn, RunIn, StageIn, ValidateIn,
-    ValuatumExportIn,
+    CompareIn, FetchIn, OrderIn, OrderStatusIn, PipelineIn, ReorderIn, RunIn,
+    StageIn, ValidateIn, ValuatumExportIn,
 )
 from fetchers.company_data import fetch_company_data  # noqa: E402
 
@@ -53,6 +53,10 @@ BUILD = "2026-06-26-autodeploy-check"
 async def auth_gate(request, call_next):
     if _APP_TOKEN and request.method != "OPTIONS":
         path = request.url.path
+        # POST /api/orders is the public website order intake — no bearer.
+        # It only writes a capped-length row; abuse guarded by rate limit + honeypot.
+        if path == "/api/orders" and request.method == "POST":
+            return await call_next(request)
         if path.startswith("/api/") and path != "/api/health":
             sent = request.headers.get("authorization", "")
             if not hmac.compare_digest(sent, f"Bearer {_APP_TOKEN}"):
@@ -216,6 +220,54 @@ def get_company_one(fid: int):
 def del_company(fid: int):
     store.delete_company(fid)
     return {"ok": True}
+
+
+# ---- website orders (public intake; operator fulfils in this UI) -------------
+# ponytail: in-memory per-IP rate limit — enough for one process; move to the DB
+# if the backend ever runs more than one instance.
+_ORDER_HITS: dict[str, list[float]] = {}
+_ORDER_LIMIT, _ORDER_WINDOW_S = 5, 3600.0
+
+
+def _order_rate_ok(ip: str) -> bool:
+    import time
+
+    now = time.monotonic()
+    hits = [t for t in _ORDER_HITS.get(ip, []) if now - t < _ORDER_WINDOW_S]
+    if len(hits) >= _ORDER_LIMIT:
+        _ORDER_HITS[ip] = hits
+        return False
+    hits.append(now)
+    _ORDER_HITS[ip] = hits
+    return True
+
+
+@app.post("/api/orders")
+def post_order(body: OrderIn, request: Request):
+    if body.website.strip():  # honeypot filled → bot; pretend success
+        return {"ok": True}
+    ip = (request.headers.get("x-forwarded-for") or "").split(",")[0].strip() \
+        or (request.client.host if request.client else "?")
+    if not _order_rate_ok(ip):
+        raise HTTPException(429, "liian monta tilausta — yritä myöhemmin uudelleen")
+    oid = store.create_order(
+        body.company.strip(), body.email.strip(),
+        body.user_input.strip() or None,
+    )
+    return {"ok": True, "order_id": oid}
+
+
+@app.get("/api/orders")
+def get_orders():
+    return store.list_orders()
+
+
+@app.patch("/api/orders/{oid}")
+def patch_order(oid: str, body: OrderStatusIn):
+    row = store.set_order_status(oid, body.status)
+    if not row:
+        raise HTTPException(404, "order not found")
+    return dict(row)
 
 
 @app.get("/api/sample-input-data")
