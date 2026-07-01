@@ -218,6 +218,36 @@ def test_table_coerces_dict_rows_and_never_dumps_raw_dict():
     assert "{'" not in h2 and render._norm_ws(render._strip_tags(h2)).count("2026 100") == 1
 
 
+def test_table_coerces_record_rows_aligns_by_column_name():
+    # Virnex risk register: rows keyed by column NAMES, emitted out of column
+    # order — must align to the header by name, not by dict insertion order.
+    b = {"type": "table", "columns": ["Riski", "Vaikutus"],
+         "rows": [{"Vaikutus": "iso", "Riski": "maksuvalmius"}]}
+    h = render._block_table(b)
+    txt = render._norm_ws(render._strip_tags(h))
+    assert txt.endswith("maksuvalmius iso")  # Riski cell first, Vaikutus second
+    assert "{'" not in h
+
+
+def test_table_pads_ragged_rows_to_header_width():
+    b = {"type": "table", "columns": ["Lähde", "Kuvaus", "Haettu"],
+         "rows": [{"row": "url", "values": ["desc", "2026-06-30"]},
+                  {"row": "url2", "values": ["only-desc"]}]}  # ragged: missing date
+    h = render._block_table(b)
+    body = h.split("<tbody>")[1]
+    import re as _re
+    counts = {tr.count("<td") for tr in _re.findall(r"<tr>(.*?)</tr>", body, _re.S)}
+    assert counts == {3}  # both rows padded to 3 cells
+
+
+def test_table_handles_rows_given_as_dict():
+    b = {"type": "table", "columns": ["", "2026"],
+         "rows": {"Liikevaihto": ["100"], "EBIT": ["10"]}}
+    h = render._block_table(b)
+    txt = render._norm_ws(render._strip_tags(h))
+    assert "Liikevaihto 100" in txt and "EBIT 10" in txt and "{'" not in h
+
+
 # --------------------------------------------------------------- block safety
 def test_blocks_tolerate_missing_and_null_fields():
     secs = [{"id": "5", "blocks": [

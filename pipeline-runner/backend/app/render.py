@@ -656,34 +656,69 @@ def _block_key_value(b):
 
 
 _ROW_LABEL_KEYS = ("row", "label", "name", "nimi", "rivi", "otsikko")
+_ROW_VALUE_KEYS = ("values", "arvot", "vals", "cells")
 
 
 def _coerce_table_rows(columns, rows):
-    """Stage-3 sometimes emits a transposed table whose rows are
-    {"row"/"label": <label>, "values": [...]} dicts instead of the contract's
-    list-of-cells. Left unhandled these stringify to a raw '{...}' dump in the
-    first cell (the Virnex forecast table). Coerce a dict row to [label, *values];
-    when the header row lacks the leading label column, prepend one empty header
-    so cells line up. List rows pass through untouched (no regression)."""
+    """Render any table shape the model emits as real cells — never a raw '{...}'
+    dump. Stages emit three non-contract variants (all seen in one report):
+      1. {"row"/"label": <label>, "values": [...]}  transposed metric-per-row
+      2. {"<ColName>": v, ...}                       record keyed by the columns
+      3. list-of-cells                               the contract shape
+    plus the occasional dict-of-rows for `rows` itself. This coerces every case:
+    variant 2 is aligned to the column order BY NAME (never trusting dict order);
+    variant 1 becomes [label, *values] with an empty label header prepended when
+    the header row lacks it; lists pass through untouched (no regression)."""
+    if isinstance(rows, dict):  # rows given as {label: values-or-scalar, ...}
+        rows = [{"row": k, "values": v} if isinstance(v, list) else {"row": k, "values": [v]}
+                for k, v in rows.items()]
     if not isinstance(rows, list):
         return columns, rows
+
+    col_list = list(columns) if isinstance(columns, list) else None
+    col_set = {str(c) for c in col_list} if col_list else set()
+
+    def values_of(r):
+        for k in _ROW_VALUE_KEYS:
+            if isinstance(r.get(k), list):
+                return r[k]
+        return None
+
     out, saw_labelled = [], False
     for r in rows:
-        if isinstance(r, dict):
-            vals = r.get("values")
-            lab = next((r[k] for k in _ROW_LABEL_KEYS if k in r), None)
-            if isinstance(vals, list):
+        if isinstance(r, list):
+            out.append(r)
+        elif isinstance(r, dict):
+            vals = values_of(r)
+            keymatch = col_set and len(col_set & {str(k) for k in r}) >= max(2, len(col_set) - 1)
+            if vals is None and keymatch:
+                # variant 2: record keyed by column names — align by name
+                out.append([r.get(c, r.get(str(c), "")) for c in col_list])
+            elif vals is not None:
+                # variant 1: {label, values}
+                lab = next((r[k] for k in _ROW_LABEL_KEYS if k in r), None)
                 out.append(([lab] if lab is not None else []) + list(vals))
                 saw_labelled = saw_labelled or lab is not None
             else:
-                out.append(list(r.values()))  # last-resort: never dump raw dict
+                out.append(list(r.values()))  # last resort: never dump a raw dict
         else:
             out.append(r)
+
     cols = columns
-    if saw_labelled and isinstance(columns, list):
+    if saw_labelled and col_list:
         widest = max((len(x) for x in out if isinstance(x, list)), default=0)
-        if len(columns) == widest - 1:
-            cols = [""] + list(columns)
+        if len(col_list) == widest - 1:
+            cols = [""] + col_list
+    # Rectangularize: pad the header and every row to one common width so a short
+    # or ragged row (a model that dropped a value) never shifts later cells under
+    # the wrong header.
+    widths = [len(x) for x in out if isinstance(x, list)]
+    width = max(([len(cols)] if isinstance(cols, list) else []) + widths, default=0)
+    if width:
+        if isinstance(cols, list):
+            cols = list(cols) + [""] * (width - len(cols))
+        out = [x + [""] * (width - len(x)) if isinstance(x, list) and len(x) < width else x
+               for x in out]
     return cols, out
 
 
