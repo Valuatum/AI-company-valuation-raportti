@@ -199,6 +199,25 @@ def test_source_url_cell_renders_clickable_domain_link():
     assert ">ytj.fi</a>" in cell  # www stripped from visible text, full URL in href
 
 
+def test_table_coerces_dict_rows_and_never_dumps_raw_dict():
+    # Regression: the Virnex forecast table. Stage 3 emitted transposed rows as
+    # {"row","values"} dicts; the old renderer stringified them to a raw '{...}'
+    # dump in the first cell. Must render as aligned cells + padded header.
+    b = {"type": "table", "title": "Ennusteen avainluvut",
+         "columns": ["2026", "2027", "2028"],
+         "rows": [{"row": "Liikevaihto", "values": ["9 821", "9 632", "9 583"]},
+                  {"row": "EBIT", "values": ["-374", "-253", "-137"]}]}
+    h = render._block_table(b)
+    assert "{'row'" not in h and '{"row"' not in h
+    assert h.count("<th>") == 4  # empty label column prepended + 3 year columns
+    txt = render._norm_ws(render._strip_tags(h))
+    assert "Liikevaihto 9 821 9 632 9 583" in txt
+    # list-of-lists rows must pass through unchanged (no regression)
+    h2 = render._block_table(
+        {"type": "table", "columns": ["Vuosi", "LV"], "rows": [[2026, 100], [2027, 110]]})
+    assert "{'" not in h2 and render._norm_ws(render._strip_tags(h2)).count("2026 100") == 1
+
+
 # --------------------------------------------------------------- block safety
 def test_blocks_tolerate_missing_and_null_fields():
     secs = [{"id": "5", "blocks": [

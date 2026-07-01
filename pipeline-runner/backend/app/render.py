@@ -655,7 +655,40 @@ def _block_key_value(b):
     return f'{head}{"".join(rows)}'
 
 
+_ROW_LABEL_KEYS = ("row", "label", "name", "nimi", "rivi", "otsikko")
+
+
+def _coerce_table_rows(columns, rows):
+    """Stage-3 sometimes emits a transposed table whose rows are
+    {"row"/"label": <label>, "values": [...]} dicts instead of the contract's
+    list-of-cells. Left unhandled these stringify to a raw '{...}' dump in the
+    first cell (the Virnex forecast table). Coerce a dict row to [label, *values];
+    when the header row lacks the leading label column, prepend one empty header
+    so cells line up. List rows pass through untouched (no regression)."""
+    if not isinstance(rows, list):
+        return columns, rows
+    out, saw_labelled = [], False
+    for r in rows:
+        if isinstance(r, dict):
+            vals = r.get("values")
+            lab = next((r[k] for k in _ROW_LABEL_KEYS if k in r), None)
+            if isinstance(vals, list):
+                out.append(([lab] if lab is not None else []) + list(vals))
+                saw_labelled = saw_labelled or lab is not None
+            else:
+                out.append(list(r.values()))  # last-resort: never dump raw dict
+        else:
+            out.append(r)
+    cols = columns
+    if saw_labelled and isinstance(columns, list):
+        widest = max((len(x) for x in out if isinstance(x, list)), default=0)
+        if len(columns) == widest - 1:
+            cols = [""] + list(columns)
+    return cols, out
+
+
 def _render_table(columns, rows, title=None, unit=None):
+    columns, rows = _coerce_table_rows(columns, rows)
     cap = ""
     if title or unit:
         u = f' <span class="muted">({_esc(unit)})</span>' if unit else ""
