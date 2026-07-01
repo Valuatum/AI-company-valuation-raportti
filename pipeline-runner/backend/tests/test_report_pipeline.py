@@ -165,6 +165,40 @@ def test_stage6_validator_requires_both_cover_figures():
     assert not validators.run_validator(_v("stage6_final.py"), missing, ctx)["passed"]
 
 
+# --------------------------------------------------- stage 2/5 grounding (advisory)
+def _grounding_ctx():
+    return {"input_data": {"actuals": {"revenue": 8903, "ebit": 1200}},
+            "enrichment": {
+                "competitors": [{"name": "Kilpailija Oy", "size_or_revenue": "50 M€"}],
+                "market_signals": [{"signal": "kierros", "amount_or_information": "6 300 tEUR"}],
+                "market_size": "1 200 M€"}}
+
+
+def test_grounding_flags_fabricated_figure_but_never_blocks():
+    out = {"sections": [{"id": "3", "blocks": [
+        {"type": "paragraph", "text": "Kokonaismarkkina on arviomme mukaan 5 000 M€ tänä vuonna."}]}]}
+    r = validators.run_validator(_v("stage_grounding.py"), out, _grounding_ctx())
+    assert r["passed"]  # advisory — surfaces but never fails the run
+    adv = next(c for c in r["checks"] if "advisory" in c["name"])
+    assert "5 000" in adv["detail"]
+
+
+def test_grounding_passes_sourced_and_derived_figures():
+    out = {"sections": [{"id": "3", "blocks": [
+        {"type": "paragraph", "text": "Liikevaihto 8 903 tEUR, markkina 1 200 M€, "
+         "kilpailija 50 M€, rahoituskierros 6 300 tEUR vuonna 2024."}]}]}
+    r = validators.run_validator(_v("stage_grounding.py"), out, _grounding_ctx())
+    adv = next(c for c in r["checks"] if "advisory" in c["name"])
+    assert r["passed"] and "all prose figures reconcile" in adv["detail"]
+
+
+def test_source_url_cell_renders_clickable_domain_link():
+    cell = render._num_cell("https://www.ytj.fi/yritys/123")
+    assert '<a class="src"' in cell
+    assert 'href="https://www.ytj.fi/yritys/123"' in cell
+    assert ">ytj.fi</a>" in cell  # www stripped from visible text, full URL in href
+
+
 # --------------------------------------------------------------- block safety
 def test_blocks_tolerate_missing_and_null_fields():
     secs = [{"id": "5", "blocks": [

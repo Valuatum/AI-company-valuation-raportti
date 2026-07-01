@@ -54,7 +54,7 @@ def _stages():
             "model": "deepseek/deepseek-v4-pro",
             "prompt_template": _load_prompt("2_profiili_kilpailijat.txt"),
             "expects_json": True,
-            "validator_code": None,
+            "validator_code": _load_validator("stage_grounding.py"),
             "input_mapping": {
                 "input_data": "Vaihe 0 FAKTAT",
                 "enrichment": "Vaihe 1 enrichment",
@@ -95,7 +95,7 @@ def _stages():
             "prompt_template": _load_prompt("5_analyysi_osiot.txt"),
             "expects_json": True,
             "max_tokens": 32000,  # emits several long analysis sections
-            "validator_code": None,
+            "validator_code": _load_validator("stage_grounding.py"),
             "input_mapping": {
                 "input_data": "Vaihe 0 FAKTAT",
                 "enrichment": "Vaihe 1 enrichment",

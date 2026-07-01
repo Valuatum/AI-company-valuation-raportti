@@ -218,11 +218,13 @@ _URL_CELL_RE = re.compile(r"^\s*https?://(?:www\.)?([^/\s]+)(?:/\S*)?\s*$", re.I
 def _num_cell(v):
     """Render a table value, colouring positive growth green / negative red."""
     # A bare URL in a source column reads as scraped data in a client PDF; show
-    # just the domain (e.g. ytj.fi) instead of the full link.
+    # just the domain (e.g. ytj.fi) as the visible text, but keep it a clickable
+    # link to the full source so the reader can verify the claim ("verify me").
     if isinstance(v, str):
         m = _URL_CELL_RE.match(v)
         if m:
-            return f'<span class="muted">{_esc(m.group(1))}</span>'
+            href = html.escape(v.strip(), quote=True)
+            return f'<a class="src" href="{href}">{_esc(m.group(1))}</a>'
     n = _to_num(v)
     txt = _esc(v)
     if n is not None and isinstance(v, str) and ("%" in v or v.strip().startswith(("+", "-", "−"))):
@@ -1203,6 +1205,7 @@ table.tbl thead th{ color:var(--green); font-weight:700; border-bottom:1.5px sol
   font-family:var(--head); font-size:7.8pt; text-align:right; }
 table.tbl thead th:first-child{ text-align:left; }
 table.tbl tbody tr:nth-child(even) td{ background:#FAFBFA; }
+a.src{ color:var(--gray); text-decoration:none; border-bottom:1px solid var(--line-strong); }
 .kv{ display:flex; justify-content:space-between; gap:10px; padding:3.5px 0; border-bottom:1px solid var(--line);
   font-size:8.6pt; align-items:baseline; }
 .kv .k{ color:var(--gray); flex:1 1 auto; }
